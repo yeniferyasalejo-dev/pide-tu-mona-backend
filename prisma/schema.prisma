@@ -21,20 +21,20 @@ model User {
 }
 
 model StickerNeeded {
-  id            String   @id @default(uuid())
-  userId        String   @map("user_id")
-  stickerNumber Int      @map("sticker_number")
-  createdAt     DateTime @default(now()) @map("created_at")
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  stickerCode String   @map("sticker_code")
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, stickerNumber])
+  @@unique([userId, stickerCode])
   @@map("stickers_needed")
 }
 
 model Inventory {
-  stickerNumber Int      @id @map("sticker_number")
-  quantity      Int      @default(0)
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  stickerCode String   @id @map("sticker_code")
+  quantity    Int      @default(0)
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("inventory")
 }

@@ -23,14 +23,14 @@ export async function updateUserEmail(userId: string, email: string) {
   });
 }
 
-export async function saveStickers(userId: string, stickerNumbers: number[]) {
+export async function saveStickers(userId: string, stickerCodes: string[]) {
   await prisma.stickerNeeded.deleteMany({ where: { userId } });
 
-  for (const num of stickerNumbers) {
+  for (const code of stickerCodes) {
     await prisma.stickerNeeded.upsert({
-      where: { userId_stickerNumber: { userId, stickerNumber: num } },
+      where: { userId_stickerCode: { userId, stickerCode: code } },
       update: {},
-      create: { userId, stickerNumber: num },
+      create: { userId, stickerCode: code },
     });
   }
 
@@ -62,18 +62,18 @@ export async function getUserById(id: string) {
 }
 
 // Cruzar láminas que pide el usuario con el inventario
-export async function checkInventory(stickerNumbers: number[]) {
+export async function checkInventory(stickerCodes: string[]) {
   const available = await prisma.inventory.findMany({
     where: {
-      stickerNumber: { in: stickerNumbers },
+      stickerCode: { in: stickerCodes },
       quantity: { gt: 0 },
     },
   });
 
-  const availableNumbers = available.map((item) => item.stickerNumber);
-  const unavailableNumbers = stickerNumbers.filter(
-    (num) => !availableNumbers.includes(num)
+  const availableCodes = available.map((item) => item.stickerCode);
+  const unavailableCodes = stickerCodes.filter(
+    (code) => !availableCodes.includes(code)
   );
 
-  return { available, availableNumbers, unavailableNumbers };
+  return { available, availableCodes, unavailableCodes };
 }

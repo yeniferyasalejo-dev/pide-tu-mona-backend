@@ -6,14 +6,27 @@ import {
   resetToWaitingStickers,
   checkInventory,
 } from "./users";
-import { isValidEmail, parseStickerNumbers } from "../utils/validators";
+import { isValidEmail, parseStickerCodes, VALID_COUNTRIES } from "../utils/validators";
 
 const HELP_MESSAGE = `📋 *Comandos disponibles:*
 
 • *actualizar* — Envía tu lista de láminas de nuevo
+• *paises* — Ver la lista de códigos de países
 • *ayuda* o */ayuda* — Muestra este menú
 
 Si tienes dudas, escribe *ayuda* en cualquier momento.`;
+
+const COUNTRIES_MESSAGE = `🌍 *Códigos de países:*
+
+${Object.entries(VALID_COUNTRIES)
+  .map(([code, name]) => `*${code}* — ${name}`)
+  .join("\n")}
+
+📌 *Especiales:*
+*FWC* — FIFA World Cup History (9-19)
+*C* — Coca-Cola (1-14)
+
+Ejemplo: \`MEX6, ARG12, FWC15, C7\``;
 
 export async function processMessage(
   user: User,
@@ -27,6 +40,10 @@ export async function processMessage(
     return HELP_MESSAGE;
   }
 
+  if (lower === "paises" || lower === "/paises") {
+    return COUNTRIES_MESSAGE;
+  }
+
   // Comando /start de Telegram — reinicia si ya existe, o saluda si es nuevo
   if (lower === "/start" && user.onboardingStep !== "START") {
     await updateStep(user.id, "START");
@@ -36,7 +53,7 @@ export async function processMessage(
   // Comando "actualizar" solo si ya completó el onboarding
   if ((lower === "actualizar" || lower === "/actualizar") && user.onboardingStep === "DONE") {
     await resetToWaitingStickers(user.id);
-    return "Mándame tu nueva lista de láminas separadas por coma. Ejemplo: 12, 45, 78, 102";
+    return "Mándame tu nueva lista de láminas separadas por coma.\n\nEjemplo: MEX6, ARG12, FWC15, C7\n\nEscribe *paises* para ver los códigos.";
   }
 
   switch (user.onboardingStep) {
@@ -56,8 +73,6 @@ export async function processMessage(
 }
 
 async function handleStart(_user: User, _text: string): Promise<string> {
-  // Primer mensaje: el webhook ya creó el usuario con START,
-  // lo pasamos a WAITING_NAME
   await updateStep(_user.id, "WAITING_NAME");
   return (
     "¡Hola! 👋 Bienvenido a *Pide Tu Mona*, la plataforma para intercambiar " +
@@ -78,33 +93,47 @@ async function handleEmail(user: User, text: string): Promise<string> {
     return "Ese correo no parece válido. Por favor mándame un email correcto, por ejemplo: juan@gmail.com";
   }
   await updateUserEmail(user.id, text.trim().toLowerCase());
-  return "Perfecto. Ahora mándame las láminas que te faltan, separadas por coma.\n\nEjemplo: 12, 45, 78, 102";
+  return (
+    "Perfecto. Ahora mándame las láminas que necesitas, separadas por coma.\n\n" +
+    "El formato es *PAÍS* + *NÚMERO*. Ejemplo:\n" +
+    "`MEX6, ARG12, FWC15, C7`\n\n" +
+    "📌 Escribe *paises* para ver la lista de códigos de países."
+  );
 }
 
 async function handleStickers(user: User, text: string): Promise<string> {
-  const numbers = parseStickerNumbers(text);
-
-  if (numbers.length === 0) {
-    return "No pude leer números válidos. Mándame las láminas separadas por coma, por ejemplo: 12, 45, 78, 102";
+  // Si escribe "paises", mostrar la lista
+  if (text.trim().toLowerCase() === "paises" || text.trim().toLowerCase() === "/paises") {
+    return COUNTRIES_MESSAGE;
   }
 
-  await saveStickers(user.id, numbers);
+  const codes = parseStickerCodes(text);
+
+  if (codes.length === 0) {
+    return (
+      "No pude leer láminas válidas. El formato es *PAÍS* + *NÚMERO*.\n\n" +
+      "Ejemplo: `MEX6, ARG12, FWC15, C7`\n\n" +
+      "Escribe *paises* para ver los códigos de países."
+    );
+  }
+
+  await saveStickers(user.id, codes);
   const name = user.name || "amigo";
 
   // Cruzar con inventario
-  const { availableNumbers, unavailableNumbers } = await checkInventory(numbers);
+  const { availableCodes, unavailableCodes } = await checkInventory(codes);
 
-  let response = `¡Listo, *${name}*! Registré *${numbers.length}* láminas que necesitas.\n\n`;
+  let response = `¡Listo, *${name}*! Registré *${codes.length}* láminas que necesitas.\n\n`;
 
-  if (availableNumbers.length > 0) {
-    response += `✅ *Tenemos ${availableNumbers.length} disponibles:* ${availableNumbers.join(", ")}\n`;
+  if (availableCodes.length > 0) {
+    response += `✅ *Tenemos ${availableCodes.length} disponibles:* ${availableCodes.join(", ")}\n`;
   }
 
-  if (unavailableNumbers.length > 0) {
-    response += `❌ *No tenemos ${unavailableNumbers.length}:* ${unavailableNumbers.join(", ")}\n`;
+  if (unavailableCodes.length > 0) {
+    response += `❌ *No tenemos ${unavailableCodes.length}:* ${unavailableCodes.join(", ")}\n`;
   }
 
-  if (availableNumbers.length > 0) {
+  if (availableCodes.length > 0) {
     response += `\nTe avisaremos cómo conseguirlas. `;
   }
 
