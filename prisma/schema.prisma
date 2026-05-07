@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  telegramChatId  String           @unique @map("telegram_chat_id")
+  name            String?
+  email           String?
+  onboardingStep  String           @default("START") @map("onboarding_step")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  stickersNeeded  StickerNeeded[]
+
+  @@map("users")
+}
+
+model StickerNeeded {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  stickerNumber Int      @map("sticker_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stickerNumber])
+  @@map("stickers_needed")
+}
+
+model Inventory {
+  stickerNumber Int      @id @map("sticker_number")
+  quantity      Int      @default(0)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("inventory")
+}

@@ -1,0 +1,38 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+import express from "express";
+import webhookRouter from "./routes/webhook";
+import adminRouter from "./routes/admin";
+import { setWebhook } from "./services/telegram";
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// Rutas
+app.use(webhookRouter);
+app.use(adminRouter);
+
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Configurar webhook de Telegram (llamar una vez con la URL pública)
+app.get("/setup-webhook", async (req, res) => {
+  const url = req.query.url as string;
+  if (!url) {
+    res.status(400).json({ error: "Falta el parámetro ?url=https://tu-dominio.com" });
+    return;
+  }
+  await setWebhook(url);
+  res.json({ ok: true, message: `Webhook configurado en ${url}/webhook` });
+});
+
+app.listen(PORT, () => {
+  console.log(`[Server] Pide Tu Mona corriendo en puerto ${PORT}`);
+});
+
+export default app;
