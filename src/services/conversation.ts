@@ -6,6 +6,7 @@ import {
   checkInventory,
 } from "./users";
 import { isValidEmail, parseStickerCodes, VALID_COUNTRIES } from "../utils/validators";
+import { interpretMessage } from "./ai";
 
 const HELP_MESSAGE = `📋 *Comandos disponibles:*
 
@@ -102,13 +103,26 @@ async function handleStickers(user: User, text: string): Promise<string> {
     return COUNTRIES_MESSAGE;
   }
 
-  const codes = parseStickerCodes(text);
+  let codes = parseStickerCodes(text);
+
+  // Si el parser no detecta nada, intentar con AI
+  if (codes.length === 0) {
+    try {
+      const aiResult = await interpretMessage(text, user.name || "amigo", "WAITING_STICKERS");
+      if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
+        codes = aiResult.codes;
+      }
+    } catch (error) {
+      console.error("[Conversation] AI error in handleStickers:", error);
+    }
+  }
 
   if (codes.length === 0) {
     return (
       "No entendí las láminas 😅 Prueba así:\n\n" +
       "• `colombia 12, mexico 6`\n" +
-      "• `COL12, MEX6, FWC15, C7`\n\n" +
+      "• `COL12, MEX6, FWC15, C7`\n" +
+      "• `me faltan todas las de cocacola`\n\n" +
       "Escribe *paises* para ver los códigos."
     );
   }
@@ -140,13 +154,47 @@ async function handleStickers(user: User, text: string): Promise<string> {
 async function handleDone(user: User, text: string): Promise<string> {
   const name = user.name || "amigo";
 
-  // Si el texto contiene láminas válidas, procesarlas directamente
+  // Primero intentar parsear láminas directamente (rápido, sin AI)
   const codes = parseStickerCodes(text);
   if (codes.length > 0) {
     return handleStickers(user, text);
   }
 
-  // Si no son láminas, dar respuesta genérica amigable
+  // Si no son láminas detectables, usar AI para interpretar
+  try {
+    const aiResult = await interpretMessage(text, name, "DONE");
+
+    if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
+      // La AI detectó que pide láminas, procesarlas
+      await saveStickers(user.id, aiResult.codes);
+      const { availableCodes, unavailableCodes } = await checkInventory(aiResult.codes);
+
+      let response = `¡Listo, *${name}*! 📝 Registré *${aiResult.codes.length}* láminas.\n\n`;
+
+      if (availableCodes.length > 0) {
+        response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
+      }
+
+      if (unavailableCodes.length > 0) {
+        response += `❌ *No tenemos ${unavailableCodes.length}:* ${unavailableCodes.join(", ")}\n`;
+      }
+
+      if (availableCodes.length > 0) {
+        response += `\n📩 Te avisaremos cómo conseguirlas.`;
+      }
+
+      response += `\n\nSi necesitas más, solo mándame la lista.`;
+      return response;
+    }
+
+    if (aiResult.type === "chat" && aiResult.reply) {
+      return aiResult.reply;
+    }
+  } catch (error) {
+    console.error("[Conversation] AI error:", error);
+  }
+
+  // Fallback si la AI falla
   return (
     `¡Hola *${name}*! 👋 No entendí tu mensaje.\n\n` +
     `Si quieres pedir láminas, escríbelas así: \`colombia 12, mexico 6\`\n` +
