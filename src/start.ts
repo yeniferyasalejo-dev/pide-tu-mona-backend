@@ -14,6 +14,34 @@ import { findOrCreateUser } from "./services/users";
 import { processMessage } from "./services/conversation";
 import { sendTelegramMessage, deleteWebhook } from "./services/telegram";
 
+// Lock por usuario para evitar race conditions con mensajes rápidos
+const userLocks = new Map<string, Promise<void>>();
+
+async function processWithLock(chatId: string, text: string): Promise<void> {
+  const key = chatId;
+  const prev = userLocks.get(key) || Promise.resolve();
+
+  const current = prev.then(async () => {
+    try {
+      // Re-fetch user para tener estado actualizado
+      const user = await findOrCreateUser(chatId);
+      console.log(`[Bot] Usuario ${user.id} — estado: ${user.onboardingStep}`);
+      const reply = await processMessage(user, text);
+      await sendTelegramMessage(chatId, reply);
+    } catch (error) {
+      console.error(`[Bot] Error procesando mensaje de ${chatId}:`, error);
+    }
+  });
+
+  userLocks.set(key, current);
+  await current;
+
+  // Limpiar lock si ya no hay más mensajes pendientes
+  if (userLocks.get(key) === current) {
+    userLocks.delete(key);
+  }
+}
+
 // === Express Server (health check + admin) ===
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,13 +81,7 @@ async function getUpdates(): Promise<void> {
 
       console.log(`[Bot] Mensaje de ${chatId}: "${text}"`);
 
-      try {
-        const user = await findOrCreateUser(String(chatId));
-        const reply = await processMessage(user, text);
-        await sendTelegramMessage(chatId, reply);
-      } catch (error) {
-        console.error(`[Bot] Error procesando mensaje de ${chatId}:`, error);
-      }
+      await processWithLock(String(chatId), text);
     }
   } catch (error: unknown) {
     if (axios.isAxiosError(error) && error.code === "ECONNABORTED") return;
