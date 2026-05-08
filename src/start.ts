@@ -23,13 +23,29 @@ async function processWithLock(chatId: string, text: string): Promise<void> {
 
   const current = prev.then(async () => {
     try {
-      // Re-fetch user para tener estado actualizado
-      const user = await findOrCreateUser(chatId);
-      console.log(`[Bot] Usuario ${user.id} — estado: ${user.onboardingStep}`);
-      const reply = await processMessage(user, text);
-      await sendTelegramMessage(chatId, reply);
+      // Timeout global de 15 segundos para que nunca se cuelgue
+      await Promise.race([
+        (async () => {
+          const user = await findOrCreateUser(chatId);
+          console.log(`[Bot] Usuario ${user.id} — estado: ${user.onboardingStep}`);
+          const reply = await processMessage(user, text);
+          await sendTelegramMessage(chatId, reply);
+        })(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout global 15s")), 15000)
+        ),
+      ]);
     } catch (error) {
-      console.error(`[Bot] Error procesando mensaje de ${chatId}:`, error);
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[Bot] Error procesando mensaje de ${chatId}: ${msg}`);
+      // Si fue timeout, intentar enviar mensaje de fallback
+      if (msg.includes("Timeout")) {
+        try {
+          await sendTelegramMessage(chatId,
+            "Tardé mucho en procesar tu mensaje. Prueba de nuevo o escribe las láminas así: COL12, MEX6"
+          );
+        } catch { /* ignorar */ }
+      }
     }
   });
 

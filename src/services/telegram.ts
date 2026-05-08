@@ -13,6 +13,7 @@ export async function sendTelegramMessage(
   message: string
 ): Promise<void> {
   try {
+    // Intentar con Markdown primero
     await axios.post(
       `${getApiUrl()}/sendMessage`,
       {
@@ -24,13 +25,27 @@ export async function sendTelegramMessage(
     );
     console.log(`[Telegram] Mensaje enviado a ${chatId}`);
   } catch (error: unknown) {
-    if (axios.isAxiosError(error)) {
-      console.error(
-        `[Telegram] Error enviando a ${chatId}:`,
-        error.response?.data || error.message
+    // Si falla por Markdown, reintentar sin formato
+    console.error(`[Telegram] Error con Markdown, reintentando sin formato...`);
+    try {
+      await axios.post(
+        `${getApiUrl()}/sendMessage`,
+        {
+          chat_id: chatId,
+          text: message,
+        },
+        { timeout: 10000 }
       );
-    } else {
-      console.error(`[Telegram] Error enviando a ${chatId}:`, error);
+      console.log(`[Telegram] Mensaje enviado sin Markdown a ${chatId}`);
+    } catch (retryError: unknown) {
+      if (axios.isAxiosError(retryError)) {
+        console.error(
+          `[Telegram] Error definitivo enviando a ${chatId}:`,
+          retryError.response?.data || retryError.message
+        );
+      } else {
+        console.error(`[Telegram] Error definitivo enviando a ${chatId}:`, retryError);
+      }
     }
   }
 }
