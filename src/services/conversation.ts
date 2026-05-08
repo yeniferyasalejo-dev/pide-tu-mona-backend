@@ -3,11 +3,9 @@ import {
   updateUserName,
   updateUserEmail,
   saveStickers,
-  resetToWaitingStickers,
   checkInventory,
 } from "./users";
 import { isValidEmail, parseStickerCodes, VALID_COUNTRIES } from "../utils/validators";
-import { humanizeResponse, chatFreeform } from "./gemini";
 
 const HELP_MESSAGE = `📋 *Comandos disponibles:*
 
@@ -27,7 +25,8 @@ ${Object.entries(VALID_COUNTRIES)
 *FWC* — FIFA World Cup History (9-19)
 *C* — Coca-Cola (1-14)
 
-Ejemplo: \`MEX6, ARG12, FWC15, C7\``;
+Ejemplo: \`MEX6, ARG12, FWC15, C7\`
+También puedes escribir: \`mexico 6, argentina 12\``;
 
 export async function processMessage(
   user: User,
@@ -36,7 +35,7 @@ export async function processMessage(
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
-  // Comandos globales (funcionan desde cualquier estado)
+  // Comandos globales
   if (lower === "ayuda" || lower === "/ayuda" || lower === "/help") {
     return HELP_MESSAGE;
   }
@@ -45,15 +44,15 @@ export async function processMessage(
     return COUNTRIES_MESSAGE;
   }
 
-  // Comando /start de Telegram — reinicia si ya existe, o saluda si es nuevo
-  if (lower === "/start" && user.onboardingStep !== "START") {
+  // Comando /start — reinicia
+  if (lower === "/start") {
     await updateStep(user.id, "START");
-    return handleStart(user, trimmed);
+    return handleStart(user);
   }
 
   switch (user.onboardingStep) {
     case "START":
-      return handleStart(user, trimmed);
+      return handleStart(user);
     case "WAITING_NAME":
       return handleName(user, trimmed);
     case "WAITING_EMAIL":
@@ -67,10 +66,12 @@ export async function processMessage(
   }
 }
 
-async function handleStart(_user: User, _text: string): Promise<string> {
-  await updateStep(_user.id, "WAITING_NAME");
-  const base = "¡Hola! 👋 Bienvenido a *Pide Tu Mona*, la plataforma para intercambiar monas del álbum del Mundial 2026.\n\nPara empezar, ¿cómo te llamas?";
-  return humanizeResponse(base, _text, "Usuario nuevo, primer mensaje, necesitamos su nombre");
+async function handleStart(user: User): Promise<string> {
+  await updateStep(user.id, "WAITING_NAME");
+  return (
+    "¡Hola! 👋 Bienvenido a *Pide Tu Mona*, tu lugar para conseguir " +
+    "las monas del álbum del Mundial 2026. ⚽\n\n¿Cómo te llamas?"
+  );
 }
 
 async function handleName(user: User, text: string): Promise<string> {
@@ -78,21 +79,25 @@ async function handleName(user: User, text: string): Promise<string> {
     return "Por favor, mándame un nombre válido (entre 2 y 100 caracteres).";
   }
   await updateUserName(user.id, text);
-  const base = `Genial, *${text}*. ¿Cuál es tu correo electrónico?`;
-  return humanizeResponse(base, text, "Usuario dio su nombre, necesitamos su email");
+  return `¡Mucho gusto, *${text}*! 😄 ¿Cuál es tu correo electrónico?`;
 }
 
 async function handleEmail(user: User, text: string): Promise<string> {
   if (!isValidEmail(text)) {
-    return "Ese correo no parece válido. Por favor mándame un email correcto, por ejemplo: juan@gmail.com";
+    return "Ese correo no parece válido 🤔 Mándame uno correcto, por ejemplo: juan@gmail.com";
   }
   await updateUserEmail(user.id, text.trim().toLowerCase());
-  const base = "Perfecto. Ahora mándame las láminas que necesitas, separadas por coma.\n\nEl formato es *PAÍS* + *NÚMERO*. Ejemplo:\n`MEX6, ARG12, FWC15, C7`\n\n📌 Escribe *paises* para ver la lista de códigos de países.";
-  return humanizeResponse(base, text, "Usuario dio su email, ahora necesitamos las láminas que busca");
+  return (
+    "¡Perfecto! 📋 Ahora dime qué láminas necesitas, separadas por coma.\n\n" +
+    "Puedes escribir el nombre del país o el código:\n" +
+    "• `colombia 12, mexico 6, brasil 5`\n" +
+    "• `COL12, MEX6, BRA5`\n" +
+    "• `FWC15` (FIFA History) o `C7` (Coca-Cola)\n\n" +
+    "Escribe *paises* para ver todos los códigos."
+  );
 }
 
 async function handleStickers(user: User, text: string): Promise<string> {
-  // Si escribe "paises", mostrar la lista
   if (text.trim().toLowerCase() === "paises" || text.trim().toLowerCase() === "/paises") {
     return COUNTRIES_MESSAGE;
   }
@@ -101,22 +106,22 @@ async function handleStickers(user: User, text: string): Promise<string> {
 
   if (codes.length === 0) {
     return (
-      "No pude leer láminas válidas. El formato es *PAÍS* + *NÚMERO*.\n\n" +
-      "Ejemplo: `MEX6, ARG12, FWC15, C7`\n\n" +
-      "Escribe *paises* para ver los códigos de países."
+      "No entendí las láminas 😅 Prueba así:\n\n" +
+      "• `colombia 12, mexico 6`\n" +
+      "• `COL12, MEX6, FWC15, C7`\n\n" +
+      "Escribe *paises* para ver los códigos."
     );
   }
 
   await saveStickers(user.id, codes);
   const name = user.name || "amigo";
 
-  // Cruzar con inventario
   const { availableCodes, unavailableCodes } = await checkInventory(codes);
 
-  let response = `¡Listo, *${name}*! Registré *${codes.length}* láminas que necesitas.\n\n`;
+  let response = `¡Listo, *${name}*! 📝 Registré *${codes.length}* láminas.\n\n`;
 
   if (availableCodes.length > 0) {
-    response += `✅ *Tenemos ${availableCodes.length} disponibles:* ${availableCodes.join(", ")}\n`;
+    response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
   }
 
   if (unavailableCodes.length > 0) {
@@ -124,19 +129,16 @@ async function handleStickers(user: User, text: string): Promise<string> {
   }
 
   if (availableCodes.length > 0) {
-    response += `\nTe avisaremos cómo conseguirlas. `;
+    response += `\n📩 Te avisaremos cómo conseguirlas.`;
   }
 
-  response += `\nSi necesitas más láminas, solo mándame la lista.`;
+  response += `\n\nSi necesitas más, solo mándame la lista.`;
 
-  return humanizeResponse(response, text, "Usuario envió sus láminas, mostrando resultado del cruce con inventario");
+  return response;
 }
 
-async function handleDone(user: User, text?: string): Promise<string> {
+async function handleDone(user: User, text: string): Promise<string> {
   const name = user.name || "amigo";
-  if (!text) {
-    return `*${name}*, ya estás registrado. Escribe *ayuda* para ver los comandos.`;
-  }
 
   // Si el texto contiene láminas válidas, procesarlas directamente
   const codes = parseStickerCodes(text);
@@ -144,11 +146,15 @@ async function handleDone(user: User, text?: string): Promise<string> {
     return handleStickers(user, text);
   }
 
-  // Si no son láminas, responder con IA
-  return chatFreeform(text, name);
+  // Si no son láminas, dar respuesta genérica amigable
+  return (
+    `¡Hola *${name}*! 👋 No entendí tu mensaje.\n\n` +
+    `Si quieres pedir láminas, escríbelas así: \`colombia 12, mexico 6\`\n` +
+    `Escribe *ayuda* para ver los comandos.`
+  );
 }
 
-// Helper interno para cambiar estado sin tocar otros campos
+// Helper interno
 import prisma from "../lib/prisma";
 
 async function updateStep(userId: string, step: string): Promise<void> {
