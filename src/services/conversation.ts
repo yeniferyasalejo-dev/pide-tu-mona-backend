@@ -11,9 +11,9 @@ import { humanizeResponse, chatFreeform } from "./gemini";
 
 const HELP_MESSAGE = `📋 *Comandos disponibles:*
 
-• *actualizar* — Envía tu lista de láminas de nuevo
 • *paises* — Ver la lista de códigos de países
 • *ayuda* o */ayuda* — Muestra este menú
+• Manda tus láminas en cualquier momento, ej: \`MEX6, COL12\`
 
 Si tienes dudas, escribe *ayuda* en cualquier momento.`;
 
@@ -49,12 +49,6 @@ export async function processMessage(
   if (lower === "/start" && user.onboardingStep !== "START") {
     await updateStep(user.id, "START");
     return handleStart(user, trimmed);
-  }
-
-  // Comando "actualizar" solo si ya completó el onboarding
-  if ((lower === "actualizar" || lower === "/actualizar") && user.onboardingStep === "DONE") {
-    await resetToWaitingStickers(user.id);
-    return "Mándame tu nueva lista de láminas separadas por coma.\n\nEjemplo: MEX6, ARG12, FWC15, C7\n\nEscribe *paises* para ver los códigos.";
   }
 
   switch (user.onboardingStep) {
@@ -133,21 +127,25 @@ async function handleStickers(user: User, text: string): Promise<string> {
     response += `\nTe avisaremos cómo conseguirlas. `;
   }
 
-  response += `\nSi quieres actualizar tu lista, escribe *actualizar*.`;
+  response += `\nSi necesitas más láminas, solo mándame la lista.`;
 
   return humanizeResponse(response, text, "Usuario envió sus láminas, mostrando resultado del cruce con inventario");
 }
 
 async function handleDone(user: User, text?: string): Promise<string> {
   const name = user.name || "amigo";
-  // Si el usuario escribe algo libre, Gemini responde
-  if (text) {
-    return chatFreeform(text, name);
+  if (!text) {
+    return `*${name}*, ya estás registrado. Escribe *ayuda* para ver los comandos.`;
   }
-  return (
-    `*${name}*, ya estás registrado. Si quieres cambiar tus láminas, ` +
-    `escribe *actualizar*.\n\nEscribe *ayuda* para ver todos los comandos.`
-  );
+
+  // Si el texto contiene láminas válidas, procesarlas directamente
+  const codes = parseStickerCodes(text);
+  if (codes.length > 0) {
+    return handleStickers(user, text);
+  }
+
+  // Si no son láminas, responder con IA
+  return chatFreeform(text, name);
 }
 
 // Helper interno para cambiar estado sin tocar otros campos
