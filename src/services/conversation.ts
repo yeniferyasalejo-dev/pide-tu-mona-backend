@@ -7,6 +7,7 @@ import {
   checkInventory,
 } from "./users";
 import { isValidEmail, parseStickerCodes, VALID_COUNTRIES } from "../utils/validators";
+import { humanizeResponse, chatFreeform } from "./gemini";
 
 const HELP_MESSAGE = `📋 *Comandos disponibles:*
 
@@ -66,7 +67,7 @@ export async function processMessage(
     case "WAITING_STICKERS":
       return handleStickers(user, trimmed);
     case "DONE":
-      return handleDone(user);
+      return handleDone(user, trimmed);
     default:
       return "Algo salió mal. Escribe *ayuda* para ver los comandos disponibles.";
   }
@@ -74,10 +75,8 @@ export async function processMessage(
 
 async function handleStart(_user: User, _text: string): Promise<string> {
   await updateStep(_user.id, "WAITING_NAME");
-  return (
-    "¡Hola! 👋 Bienvenido a *Pide Tu Mona*, la plataforma para intercambiar " +
-    "monas del álbum del Mundial 2026.\n\nPara empezar, ¿cómo te llamas?"
-  );
+  const base = "¡Hola! 👋 Bienvenido a *Pide Tu Mona*, la plataforma para intercambiar monas del álbum del Mundial 2026.\n\nPara empezar, ¿cómo te llamas?";
+  return humanizeResponse(base, _text, "Usuario nuevo, primer mensaje, necesitamos su nombre");
 }
 
 async function handleName(user: User, text: string): Promise<string> {
@@ -85,7 +84,8 @@ async function handleName(user: User, text: string): Promise<string> {
     return "Por favor, mándame un nombre válido (entre 2 y 100 caracteres).";
   }
   await updateUserName(user.id, text);
-  return `Genial, *${text}*. ¿Cuál es tu correo electrónico?`;
+  const base = `Genial, *${text}*. ¿Cuál es tu correo electrónico?`;
+  return humanizeResponse(base, text, "Usuario dio su nombre, necesitamos su email");
 }
 
 async function handleEmail(user: User, text: string): Promise<string> {
@@ -93,12 +93,8 @@ async function handleEmail(user: User, text: string): Promise<string> {
     return "Ese correo no parece válido. Por favor mándame un email correcto, por ejemplo: juan@gmail.com";
   }
   await updateUserEmail(user.id, text.trim().toLowerCase());
-  return (
-    "Perfecto. Ahora mándame las láminas que necesitas, separadas por coma.\n\n" +
-    "El formato es *PAÍS* + *NÚMERO*. Ejemplo:\n" +
-    "`MEX6, ARG12, FWC15, C7`\n\n" +
-    "📌 Escribe *paises* para ver la lista de códigos de países."
-  );
+  const base = "Perfecto. Ahora mándame las láminas que necesitas, separadas por coma.\n\nEl formato es *PAÍS* + *NÚMERO*. Ejemplo:\n`MEX6, ARG12, FWC15, C7`\n\n📌 Escribe *paises* para ver la lista de códigos de países.";
+  return humanizeResponse(base, text, "Usuario dio su email, ahora necesitamos las láminas que busca");
 }
 
 async function handleStickers(user: User, text: string): Promise<string> {
@@ -139,11 +135,15 @@ async function handleStickers(user: User, text: string): Promise<string> {
 
   response += `\nSi quieres actualizar tu lista, escribe *actualizar*.`;
 
-  return response;
+  return humanizeResponse(response, text, "Usuario envió sus láminas, mostrando resultado del cruce con inventario");
 }
 
-async function handleDone(user: User): Promise<string> {
+async function handleDone(user: User, text?: string): Promise<string> {
   const name = user.name || "amigo";
+  // Si el usuario escribe algo libre, Gemini responde
+  if (text) {
+    return chatFreeform(text, name);
+  }
   return (
     `*${name}*, ya estás registrado. Si quieres cambiar tus láminas, ` +
     `escribe *actualizar*.\n\nEscribe *ayuda* para ver todos los comandos.`
