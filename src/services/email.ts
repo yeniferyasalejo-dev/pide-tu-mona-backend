@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 
 const EMAIL_USER = process.env.EMAIL_USER || "";
 const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD || "";
+const SELLER_EMAIL = process.env.SELLER_EMAIL || "yeniferyasalejo@gmail.com";
 
 function getTransporter() {
   if (!EMAIL_USER || !EMAIL_APP_PASSWORD) {
@@ -85,6 +86,7 @@ export async function sendPurchaseConfirmation(params: {
   `;
 
   try {
+    // Email al cliente
     await transporter.sendMail({
       from: `"Pide Tu Mona" <${EMAIL_USER}>`,
       to: params.to,
@@ -92,10 +94,59 @@ export async function sendPurchaseConfirmation(params: {
       html,
     });
     console.log(`[Email] Confirmacion enviada a ${params.to}`);
+
+    // Notificación a la vendedora
+    try {
+      await sendSellerNotification(params);
+    } catch (e) {
+      console.error("[Email] Error enviando notificación a vendedora:", e);
+    }
+
     return true;
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("[Email] Error enviando:", msg);
     return false;
   }
+}
+
+/**
+ * Notifica a la vendedora de una nueva venta
+ */
+async function sendSellerNotification(params: {
+  to: string;
+  buyerName: string;
+  orderId: string;
+  stickers: string[];
+  totalAmount: number;
+}): Promise<void> {
+  const transporter = getTransporter();
+  if (!transporter) return;
+
+  const totalFormatted = new Intl.NumberFormat("es-CO").format(params.totalAmount);
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:#ff9800;color:white;padding:20px;text-align:center;">
+        <h1 style="margin:0;">Nueva Venta! 🎉</h1>
+      </div>
+      <div style="padding:20px;">
+        <p><strong>Comprador:</strong> ${params.buyerName}</p>
+        <p><strong>Email:</strong> ${params.to}</p>
+        <p><strong>Orden:</strong> #${params.orderId.substring(0, 8)}</p>
+        <p><strong>Laminas (${params.stickers.length}):</strong> ${params.stickers.join(", ")}</p>
+        <p><strong>Total:</strong> $${totalFormatted} COP</p>
+        <hr style="margin:20px 0;">
+        <p style="color:#666;">Coordina la entrega con el cliente.</p>
+      </div>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: `"Pide Tu Mona" <${EMAIL_USER}>`,
+    to: SELLER_EMAIL,
+    subject: `💰 Nueva venta #${params.orderId.substring(0, 8)} - ${params.buyerName} - $${totalFormatted}`,
+    html,
+  });
+  console.log(`[Email] Notificacion de venta enviada a ${SELLER_EMAIL}`);
 }
