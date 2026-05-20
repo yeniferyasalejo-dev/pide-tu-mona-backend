@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 
 const EMAIL_USER = process.env.EMAIL_USER || "";
 const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD || "";
-const SELLER_EMAIL = process.env.SELLER_EMAIL || "yeniferyasalejo@gmail.com";
+const SELLER_EMAIL = process.env.SELLER_EMAIL || "vendsysselweb@gmail.com";
 
 function getTransporter() {
   if (!EMAIL_USER || !EMAIL_APP_PASSWORD) {
