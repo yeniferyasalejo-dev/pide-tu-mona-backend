@@ -16,8 +16,35 @@ model User {
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   stickersNeeded  StickerNeeded[]
+  orders          Order[]
 
   @@map("users")
+}
+
+model Order {
+  id                String      @id @default(uuid())
+  userId            String      @map("user_id")
+  status            String      @default("PENDING") // PENDING, PROCESSING, PAID, FAILED, EXPIRED
+  totalAmount       Int         @map("total_amount") // en COP
+  tpagaChargeToken  String?     @map("tpaga_charge_token")
+  tpagaBankUrl      String?     @map("tpaga_bank_url")
+  bankCode          String?     @map("bank_code")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items             OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String @id @default(uuid())
+  orderId     String @map("order_id")
+  stickerCode String @map("sticker_code")
+  unitPrice   Int    @default(5000) @map("unit_price")
+  order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
 }
 
 model StickerNeeded {
