@@ -123,7 +123,9 @@ router.get("/payment/status", (_req: Request, res: Response) => {
         <div class="emoji">⚽</div>
         <h1>Pide Tu Mona</h1>
         <p><strong>Estamos procesando tu pago...</strong></p>
-        <p>Te notificaremos por Telegram cuando se confirme. Puedes cerrar esta pagina.</p>
+        <p>Te notificaremos por Telegram cuando se confirme.</p>
+        <p>Tambien recibiras un correo de confirmacion con el detalle de tu compra y los pasos a seguir para la entrega. 📧</p>
+        <p>Puedes cerrar esta pagina.</p>
         <p style="margin-top:20px;">
           <a href="https://t.me/mundial26_bot" style="color:#1a7a2e;font-weight:bold;">Volver al bot de Telegram</a>
         </p>
