@@ -58,6 +58,7 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
           orderId: order.id,
           stickers: discounted,
           totalAmount: discounted.length * 5000,
+          deliveryAddress: order.deliveryAddress || undefined,
         });
       }
 

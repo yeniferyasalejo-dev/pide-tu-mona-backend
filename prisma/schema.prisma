@@ -29,6 +29,7 @@ model Order {
   tpagaChargeToken  String?     @map("tpaga_charge_token")
   tpagaBankUrl      String?     @map("tpaga_bank_url")
   bankCode          String?     @map("bank_code")
+  deliveryAddress   String?     @map("delivery_address")
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
   user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)

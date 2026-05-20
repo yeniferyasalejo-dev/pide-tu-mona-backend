@@ -100,7 +100,7 @@ export async function getAvailableStickersForUser(userId: string) {
 /**
  * Crea una orden de compra
  */
-export async function createOrder(userId: string, stickerCodes: string[]) {
+export async function createOrder(userId: string, stickerCodes: string[], deliveryAddress?: string) {
   const totalAmount = stickerCodes.length * 5000;
 
   return prisma.order.create({
@@ -108,6 +108,7 @@ export async function createOrder(userId: string, stickerCodes: string[]) {
       userId,
       totalAmount,
       status: "PENDING",
+      deliveryAddress: deliveryAddress || null,
       items: {
         create: stickerCodes.map((code) => ({
           stickerCode: code,

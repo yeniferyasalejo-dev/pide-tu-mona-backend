@@ -39,8 +39,9 @@ ${Object.entries(VALID_COUNTRIES)
 Ejemplo: \`MEX6, ARG12, FWC15, C7\`
 También puedes escribir: \`mexico 6, argentina 12\``;
 
-// Cache temporal de bancos por usuario (para seleccion)
+// Cache temporal de bancos y dirección por usuario
 const userBanksCache = new Map<string, { code: string; name: string }[]>();
+const userAddressCache = new Map<string, string>();
 
 export async function processMessage(
   user: User,
@@ -66,7 +67,7 @@ export async function processMessage(
 
   // Comando cancelar — cancela compra en cualquier estado de compra
   if (lower === "cancelar") {
-    const purchaseStates = ["WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_DOCUMENT", "WAITING_PAYMENT"];
+    const purchaseStates = ["WAITING_ADDRESS", "WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_DOCUMENT", "WAITING_PAYMENT"];
     if (purchaseStates.includes(user.onboardingStep)) {
       const pendingOrder = await findPendingOrder(user.id);
       if (pendingOrder) {
@@ -88,6 +89,8 @@ export async function processMessage(
       return handleStickers(user, trimmed);
     case "DONE":
       return handleDone(user, trimmed);
+    case "WAITING_ADDRESS":
+      return handleAddress(user, trimmed);
     case "WAITING_PURCHASE_CONFIRM":
       return handlePurchaseConfirm(user, trimmed);
     case "WAITING_BANK_SELECTION":
@@ -271,15 +274,55 @@ async function startPurchaseFlow(user: User): Promise<string> {
   const total = availableCodes.length * 5000;
   const totalFormatted = new Intl.NumberFormat("es-CO").format(total);
 
-  await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
+  await updateStep(user.id, "WAITING_ADDRESS");
 
   return (
     `🛒 *Resumen de compra:*\n\n` +
     `Láminas: *${availableCodes.length}*\n` +
     `${availableCodes.join(", ")}\n\n` +
     `💰 *Total: $${totalFormatted} COP* ($5,000 c/u)\n\n` +
-    `¿Deseas continuar?\n` +
-    `• Escribe *si* para pagar\n` +
+    `📦 Para la entrega, envíame tus datos en un solo mensaje:\n\n` +
+    `Ciudad:\n` +
+    `Barrio:\n` +
+    `Dirección/Conjunto:\n` +
+    `Nombre de quien recibe:\n` +
+    `Datos adicionales:\n\n` +
+    `Ejemplo:\n` +
+    `\`Bogotá\n` +
+    `Chapinero\n` +
+    `Calle 53 #12-45, Torre 2 Apto 301\n` +
+    `María López\n` +
+    `Portería abierta hasta las 8pm\`\n\n` +
+    `Escribe *cancelar* para cancelar.`
+  );
+}
+
+async function handleAddress(user: User, text: string): Promise<string> {
+  const lower = text.toLowerCase().trim();
+
+  if (lower === "cancelar") {
+    await updateStep(user.id, "DONE");
+    return "Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍";
+  }
+
+  // Validar que tenga al menos algo razonable (mínimo 10 caracteres)
+  if (text.length < 10) {
+    return (
+      "La dirección parece muy corta 🤔\n\n" +
+      "Envíame los datos completos: ciudad, barrio, dirección, nombre de quien recibe."
+    );
+  }
+
+  // Guardar dirección en cache temporal
+  userAddressCache.set(user.id, text);
+
+  await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
+
+  return (
+    `📦 *Dirección registrada* ✅\n\n` +
+    `${text}\n\n` +
+    `¿Todo correcto?\n` +
+    `• Escribe *si* para continuar al pago\n` +
     `• Escribe *cancelar* para cancelar`
   );
 }
@@ -365,8 +408,9 @@ async function handleDocument(user: User, text: string): Promise<string> {
     return "Ya no hay láminas disponibles para comprar. Intenta más tarde.";
   }
 
-  // Crear la orden en la base de datos
-  const order = await createOrder(user.id, availableCodes);
+  // Crear la orden en la base de datos con dirección de entrega
+  const deliveryAddress = userAddressCache.get(user.id);
+  const order = await createOrder(user.id, availableCodes, deliveryAddress);
 
   try {
     // Crear cobro en Tpaga
@@ -399,6 +443,7 @@ async function handleDocument(user: User, text: string): Promise<string> {
     // Limpiar cache
     userBanksCache.delete(user.id);
     userBanksCache.delete(user.id + "_bank");
+    userAddressCache.delete(user.id);
 
     return (
       `💳 *Pago listo!*\n\n` +

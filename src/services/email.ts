@@ -28,6 +28,7 @@ export async function sendPurchaseConfirmation(params: {
   orderId: string;
   stickers: string[];
   totalAmount: number;
+  deliveryAddress?: string;
 }): Promise<boolean> {
   const transporter = getTransporter();
   if (!transporter) {
@@ -76,6 +77,13 @@ export async function sendPurchaseConfirmation(params: {
           </tfoot>
         </table>
 
+        ${params.deliveryAddress ? `
+        <div style="background:#f0f8f0;padding:15px;border-radius:8px;margin:15px 0;">
+          <h3 style="margin:0 0 10px;color:#1a7a2e;">📦 Direccion de entrega:</h3>
+          <p style="margin:0;white-space:pre-line;">${params.deliveryAddress}</p>
+        </div>
+        ` : ''}
+
         <p>Te contactaremos pronto para coordinar la entrega de tus laminas.</p>
 
         <p style="color:#666;font-size:12px;margin-top:30px;">
@@ -119,6 +127,7 @@ async function sendSellerNotification(params: {
   orderId: string;
   stickers: string[];
   totalAmount: number;
+  deliveryAddress?: string;
 }): Promise<void> {
   const transporter = getTransporter();
   if (!transporter) return;
@@ -136,6 +145,12 @@ async function sendSellerNotification(params: {
         <p><strong>Orden:</strong> #${params.orderId.substring(0, 8)}</p>
         <p><strong>Laminas (${params.stickers.length}):</strong> ${params.stickers.join(", ")}</p>
         <p><strong>Total:</strong> $${totalFormatted} COP</p>
+        ${params.deliveryAddress ? `
+        <div style="background:#fff3e0;padding:15px;border-radius:8px;margin:15px 0;">
+          <p style="margin:0;"><strong>📦 Direccion de entrega:</strong></p>
+          <p style="margin:5px 0 0;white-space:pre-line;">${params.deliveryAddress}</p>
+        </div>
+        ` : ''}
         <hr style="margin:20px 0;">
         <p style="color:#666;">Coordina la entrega con el cliente.</p>
       </div>
