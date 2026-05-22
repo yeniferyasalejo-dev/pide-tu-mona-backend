@@ -17,14 +17,15 @@ import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
 
-const HELP_MESSAGE = `📋 *Comandos disponibles:*
+const HELP_MESSAGE = `📋 *¿En qué te puedo ayudar?*
 
-• *paises* — Ver la lista de códigos de países
-• *comprar* — Comprar las láminas disponibles
-• *ayuda* o */ayuda* — Muestra este menú
-• Manda tus láminas en cualquier momento, ej: \`MEX6, COL12\`
+• Mándame las láminas que necesitas, ej: \`colombia 12, mexico 6\`
+• Escribe *paises* para ver los códigos
+• Escribe *comprar* cuando quieras pagar
+• Escribe *ayuda* si te pierdes
 
-Precio: *$5,000 COP* por lámina 💰`;
+💰 Cada lámina cuesta *$5,000 COP*
+📦 Te las enviamos a tu dirección`;
 
 const COUNTRIES_MESSAGE = `🌍 *Códigos de países:*
 
@@ -107,31 +108,32 @@ export async function processMessage(
 async function handleStart(user: User): Promise<string> {
   await updateStep(user.id, "WAITING_NAME");
   return (
-    "¡Hola! 👋 Bienvenido a *Pide Tu Mona*, tu lugar para conseguir " +
-    "las monas del álbum del Mundial 2026. ⚽\n\n¿Cómo te llamas?"
+    "¡Hola! 👋 Bienvenido a *Pide Tu Mona*\n\n" +
+    "Aquí conseguís las monas que te faltan del álbum del Mundial 2026. ⚽\n\n" +
+    "Para empezar, ¿cómo te llamas?"
   );
 }
 
 async function handleName(user: User, text: string): Promise<string> {
   if (text.length < 2 || text.length > 100) {
-    return "Por favor, mándame un nombre válido (entre 2 y 100 caracteres).";
+    return "Mmm, ese nombre no me cuadra 🤔 Mándame tu nombre, porfa.";
   }
   await updateUserName(user.id, text);
-  return `¡Mucho gusto, *${text}*! 😄 ¿Cuál es tu correo electrónico?`;
+  return `¡Mucho gusto, *${text}*! 😄\n\n¿Me pasas tu correo electrónico? Lo necesito para enviarte la confirmación de compra.`;
 }
 
 async function handleEmail(user: User, text: string): Promise<string> {
   if (!isValidEmail(text)) {
-    return "Ese correo no parece válido 🤔 Mándame uno correcto, por ejemplo: juan@gmail.com";
+    return "Ese correo no me parece válido 🤔 Prueba de nuevo, ej: juan@gmail.com";
   }
   await updateUserEmail(user.id, text.trim().toLowerCase());
   return (
-    "¡Perfecto! 📋 Ahora dime qué láminas necesitas, separadas por coma.\n\n" +
-    "Puedes escribir el nombre del país o el código:\n" +
+    "¡Listo! ✅ Ahora sí, dime qué láminas te faltan.\n\n" +
+    "Me las puedes escribir como quieras:\n" +
     "• `colombia 12, mexico 6, brasil 5`\n" +
     "• `COL12, MEX6, BRA5`\n" +
-    "• `FWC15` (FIFA History) o `C7` (Coca-Cola)\n\n" +
-    "Escribe *paises* para ver todos los códigos."
+    "• O dime algo como: `me faltan todas las de cocacola`\n\n" +
+    "Escribe *paises* si quieres ver los códigos. 🌍"
   );
 }
 
@@ -156,11 +158,12 @@ async function handleStickers(user: User, text: string): Promise<string> {
 
   if (codes.length === 0) {
     return (
-      "No entendí las láminas 😅 Prueba así:\n\n" +
+      "No pillé cuáles láminas necesitas 😅\n\n" +
+      "Prueba escribirlas así:\n" +
       "• `colombia 12, mexico 6`\n" +
       "• `COL12, MEX6, FWC15, C7`\n" +
       "• `me faltan todas las de cocacola`\n\n" +
-      "Escribe *paises* para ver los códigos."
+      "O escribe *paises* para ver los códigos."
     );
   }
 
@@ -242,10 +245,10 @@ async function handleDone(user: User, text: string): Promise<string> {
 
   // Fallback si la AI falla
   return (
-    `¡Hola *${name}*! 👋 No entendí tu mensaje.\n\n` +
-    `Si quieres pedir láminas, escríbelas así: \`colombia 12, mexico 6\`\n` +
-    `Escribe *comprar* si ya tienes láminas registradas.\n` +
-    `Escribe *ayuda* para ver los comandos.`
+    `*${name}*, no te entendí bien 😅\n\n` +
+    `¿Necesitas láminas? Escríbelas así: \`colombia 12, mexico 6\`\n` +
+    `¿Ya tienes láminas? Escribe *comprar*\n` +
+    `¿Perdido? Escribe *ayuda* 🙌`
   );
 }
 
