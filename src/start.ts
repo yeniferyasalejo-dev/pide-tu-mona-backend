@@ -80,6 +80,26 @@ app.listen(PORT, () => {
 const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
 let lastUpdateId = 0;
 
+// Deduplicación: guardar los últimos message_id procesados por chat
+const processedMessages = new Map<string, Set<number>>();
+const MAX_PROCESSED_PER_CHAT = 50;
+
+function isAlreadyProcessed(chatId: string, messageId: number): boolean {
+  const processed = processedMessages.get(chatId);
+  if (!processed) {
+    processedMessages.set(chatId, new Set([messageId]));
+    return false;
+  }
+  if (processed.has(messageId)) return true;
+  processed.add(messageId);
+  // Limpiar mensajes viejos si hay muchos
+  if (processed.size > MAX_PROCESSED_PER_CHAT) {
+    const arr = [...processed];
+    processedMessages.set(chatId, new Set(arr.slice(-MAX_PROCESSED_PER_CHAT)));
+  }
+  return false;
+}
+
 async function getUpdates(): Promise<void> {
   try {
     const res = await axios.get(`${TELEGRAM_API}/getUpdates`, {
@@ -95,7 +115,14 @@ async function getUpdates(): Promise<void> {
       if (!message?.text || !message?.chat?.id) continue;
 
       const chatId = message.chat.id;
+      const messageId = message.message_id;
       const text = message.text;
+
+      // Evitar procesar el mismo mensaje dos veces
+      if (isAlreadyProcessed(String(chatId), messageId)) {
+        console.log(`[Bot] Mensaje duplicado ignorado: ${chatId}/${messageId}`);
+        continue;
+      }
 
       console.log(`[Bot] Mensaje de ${chatId}: "${text}"`);
 

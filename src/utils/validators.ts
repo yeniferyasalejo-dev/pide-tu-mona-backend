@@ -143,7 +143,7 @@ export function parseStickerCodes(text: string): string[] {
     if (codeMatch) {
       const country = codeMatch[1];
       const num = parseInt(codeMatch[2]);
-      if (COUNTRY_CODES.includes(country) && num >= 1 && num <= 20) {
+      if (COUNTRY_CODES.includes(country) && num >= 1 && num <= 99) {
         codes.push(`${country}${num}`);
         continue;
       }
@@ -165,7 +165,7 @@ export function parseStickerCodes(text: string): string[] {
         codes.push(`FWC${num}`);
         continue;
       }
-      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num >= 1 && num <= 20) {
+      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num >= 1 && num <= 99) {
         codes.push(`${resolvedCode}${num}`);
         continue;
       }
