@@ -136,9 +136,34 @@ async function getUpdates(): Promise<void> {
   }
 }
 
+async function flushPendingUpdates(): Promise<void> {
+  try {
+    // Descartar todos los mensajes pendientes para evitar duplicados al reiniciar
+    const res = await axios.get(`${TELEGRAM_API}/getUpdates`, {
+      params: { offset: -1, timeout: 0 },
+      timeout: 5000,
+    });
+    const updates = res.data?.result || [];
+    if (updates.length > 0) {
+      lastUpdateId = updates[updates.length - 1].update_id;
+      console.log(`[Bot] Descartados ${updates.length} mensajes pendientes (último ID: ${lastUpdateId})`);
+    }
+  } catch (error) {
+    console.error("[Bot] Error descartando mensajes pendientes:", error);
+  }
+}
+
 async function startPolling(): Promise<void> {
   console.log("[Bot] Eliminando webhook anterior...");
   await deleteWebhook();
+
+  // Descartar mensajes que llegaron mientras el bot estaba reiniciando
+  await flushPendingUpdates();
+
+  // Esperar 3 segundos para que la instancia anterior termine
+  console.log("[Bot] Esperando 3s para evitar conflictos...");
+  await new Promise((r) => setTimeout(r, 3000));
+
   console.log("[Bot] Polling iniciado. Esperando mensajes de @mundial26_bot...");
 
   while (true) {
