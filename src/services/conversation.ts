@@ -115,11 +115,32 @@ async function handleStart(user: User): Promise<string> {
 }
 
 async function handleName(user: User, text: string): Promise<string> {
-  if (text.length < 2 || text.length > 100) {
-    return "Mmm, ese nombre no me cuadra 🤔 Mándame tu nombre, porfa.";
+  // Extraer el nombre limpio (quitar "me llamo", "soy", "mi nombre es", etc.)
+  let name = text.trim();
+  const prefixes = [
+    /^me\s+llamo\s+/i,
+    /^mi\s+nombre\s+es\s+/i,
+    /^soy\s+/i,
+    /^me\s+dicen\s+/i,
+    /^me\s+digo\s+/i,
+    /^hola,?\s+soy\s+/i,
+    /^hola,?\s+me\s+llamo\s+/i,
+    /^hola,?\s+mi\s+nombre\s+es\s+/i,
+  ];
+  for (const prefix of prefixes) {
+    name = name.replace(prefix, "");
   }
-  await updateUserName(user.id, text);
-  return `¡Mucho gusto, *${text}*! 😄\n\n¿Me pasas tu correo electrónico? Lo necesito para enviarte la confirmación de compra.`;
+  name = name.trim();
+
+  if (name.length < 2 || name.length > 100) {
+    return "Mmm, no pillé tu nombre 🤔 ¿Cómo te llamas?";
+  }
+
+  // Capitalizar primera letra
+  name = name.charAt(0).toUpperCase() + name.slice(1);
+
+  await updateUserName(user.id, name);
+  return `¡Mucho gusto, *${name}*! 😄\n\n¿Me pasas tu correo electrónico? Lo necesito para enviarte la confirmación de compra.`;
 }
 
 async function handleEmail(user: User, text: string): Promise<string> {
