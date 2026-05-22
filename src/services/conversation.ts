@@ -11,7 +11,7 @@ import {
   markOrderFailed,
   updateUserStep,
 } from "./users";
-import { isValidEmail, parseStickerCodes, VALID_COUNTRIES } from "../utils/validators";
+import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES } from "../utils/validators";
 import { interpretMessage } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
 
@@ -157,6 +157,10 @@ async function handleStickers(user: User, text: string): Promise<string> {
   }
 
   if (codes.length === 0) {
+    // Verificar si el usuario escribió un número fuera de rango
+    const outOfRange = detectOutOfRange(text);
+    if (outOfRange) return outOfRange;
+
     return (
       "No pillé cuáles láminas necesitas 😅\n\n" +
       "Prueba escribirlas así:\n" +
@@ -201,6 +205,10 @@ async function handleDone(user: User, text: string): Promise<string> {
   if (lower === "comprar") {
     return startPurchaseFlow(user);
   }
+
+  // Verificar si escribió láminas con número fuera de rango
+  const outOfRange = detectOutOfRange(text);
+  if (outOfRange) return outOfRange;
 
   // Primero intentar parsear láminas directamente (rápido, sin AI)
   const codes = parseStickerCodes(text);

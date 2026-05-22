@@ -143,7 +143,7 @@ export function parseStickerCodes(text: string): string[] {
     if (codeMatch) {
       const country = codeMatch[1];
       const num = parseInt(codeMatch[2]);
-      if (COUNTRY_CODES.includes(country) && num >= 1 && num <= 99) {
+      if (COUNTRY_CODES.includes(country) && num >= 1 && num <= 20) {
         codes.push(`${country}${num}`);
         continue;
       }
@@ -165,7 +165,7 @@ export function parseStickerCodes(text: string): string[] {
         codes.push(`FWC${num}`);
         continue;
       }
-      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num >= 1 && num <= 99) {
+      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num >= 1 && num <= 20) {
         codes.push(`${resolvedCode}${num}`);
         continue;
       }
@@ -174,6 +174,51 @@ export function parseStickerCodes(text: string): string[] {
 
   // Eliminar duplicados
   return [...new Set(codes)];
+}
+
+/**
+ * Detecta si el usuario escribió láminas con números fuera de rango
+ * y devuelve un mensaje de error útil. Retorna null si no detecta el problema.
+ */
+export function detectOutOfRange(text: string): string | null {
+  const parts = text.split(/[,\n]+/).map((s) => s.trim()).filter((s) => s.length > 0);
+
+  for (const part of parts) {
+    const upper = part.toUpperCase().trim();
+    const noSpaces = upper.replace(/\s+/g, "");
+
+    // Código pegado: COL54
+    const codeMatch = noSpaces.match(/^([A-Z]{2,3})(\d{1,3})$/);
+    if (codeMatch) {
+      const country = codeMatch[1];
+      const num = parseInt(codeMatch[2]);
+      if (COUNTRY_CODES.includes(country) && num > 20) {
+        const countryName = VALID_COUNTRIES[country] || country;
+        return `La lámina *${country}${num}* no existe 🤔\n\n*${countryName}* solo tiene láminas del *1 al 20*.\n\nEjemplo: \`${country}1, ${country}12, ${country}20\``;
+      }
+    }
+
+    // Con espacio: "colombia 54"
+    const spaceMatch = upper.match(/^(.+?)\s+(\d{1,3})$/);
+    if (spaceMatch) {
+      const nameOrCode = spaceMatch[1].trim();
+      const num = parseInt(spaceMatch[2]);
+      const resolvedCode = findCountryCode(nameOrCode);
+
+      if (resolvedCode === "COCA" && num > 14) {
+        return `La lámina *C${num}* no existe 🤔\n\n*Coca-Cola* solo tiene láminas del *1 al 14*.\n\nEjemplo: \`C1, C7, C14\``;
+      }
+      if (resolvedCode === "FWC" && (num < 9 || num > 19)) {
+        return `La lámina *FWC${num}* no existe 🤔\n\n*FIFA World Cup History* solo tiene láminas del *9 al 19*.\n\nEjemplo: \`FWC9, FWC15, FWC19\``;
+      }
+      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num > 20) {
+        const countryName = VALID_COUNTRIES[resolvedCode] || resolvedCode;
+        return `La lámina *${resolvedCode}${num}* no existe 🤔\n\n*${countryName}* solo tiene láminas del *1 al 20*.\n\nEjemplo: \`${resolvedCode}1, ${resolvedCode}12, ${resolvedCode}20\``;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
