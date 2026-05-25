@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { STICKER_PRICE_FORMATTED } from "../utils/validators";
 
 const EMAIL_USER = process.env.EMAIL_USER || "";
 const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD || "";
@@ -39,7 +40,7 @@ export async function sendPurchaseConfirmation(params: {
   const stickerRows = params.stickers
     .map(
       (code) =>
-        `<tr><td style="padding:8px;border:1px solid #ddd;">${code}</td><td style="padding:8px;border:1px solid #ddd;text-align:right;">$5,000</td></tr>`
+        `<tr><td style="padding:8px;border:1px solid #ddd;">${code}</td><td style="padding:8px;border:1px solid #ddd;text-align:right;">$${STICKER_PRICE_FORMATTED}</td></tr>`
     )
     .join("");
 

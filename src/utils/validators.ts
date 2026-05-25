@@ -1,3 +1,7 @@
+// Precio por lámina en COP — cambiar aquí actualiza todo el sistema
+export const STICKER_PRICE = 1500;
+export const STICKER_PRICE_FORMATTED = new Intl.NumberFormat("es-CO").format(STICKER_PRICE);
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(email: string): boolean {

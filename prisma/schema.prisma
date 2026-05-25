@@ -42,7 +42,7 @@ model OrderItem {
   id          String @id @default(uuid())
   orderId     String @map("order_id")
   stickerCode String @map("sticker_code")
-  unitPrice   Int    @default(5000) @map("unit_price")
+  unitPrice   Int    @default(1500) @map("unit_price")
   order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_items")

@@ -15,7 +15,7 @@ PERSONALIDAD:
 - Puedes hacer comentarios futboleros cuando sea natural ("¡Vamos Colombia!" etc.)
 
 CONTEXTO DEL NEGOCIO:
-- Vendemos láminas del álbum del Mundial 2026 a $5,000 COP cada una
+- Vendemos láminas del álbum del Mundial 2026 a $1,500 COP cada una
 - El cliente pide láminas por Telegram, paga por PSE, y se las entregamos
 - Tenemos láminas de 48 países + Coca-Cola (C1-C14) + FIFA World Cup History (FWC9-FWC19)
 - Para comprar: el cliente manda la lista de láminas, luego escribe "comprar"
@@ -128,7 +128,7 @@ function getStateContext(state: string, userName: string): string {
 1. Pidiendo más láminas (responde con JSON de códigos)
 2. Preguntando algo sobre el servicio (responde naturalmente)
 3. Saludando o conversando (sé amigable, recuérdale que puede pedir láminas o escribir "comprar")
-4. Preguntando por precios ($5,000 COP por lámina)
+4. Preguntando por precios ($1,500 COP por lámina)
 5. Si dice "comprar", dile que escriba exactamente *comprar* para iniciar la compra`;
 
     default:

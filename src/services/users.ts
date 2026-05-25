@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { STICKER_PRICE } from "../utils/validators";
 
 export async function findOrCreateUser(chatId: string) {
   return prisma.user.upsert({
@@ -101,7 +102,7 @@ export async function getAvailableStickersForUser(userId: string) {
  * Crea una orden de compra
  */
 export async function createOrder(userId: string, stickerCodes: string[], deliveryAddress?: string) {
-  const totalAmount = stickerCodes.length * 5000;
+  const totalAmount = stickerCodes.length * STICKER_PRICE;
 
   return prisma.order.create({
     data: {
@@ -112,7 +113,7 @@ export async function createOrder(userId: string, stickerCodes: string[], delive
       items: {
         create: stickerCodes.map((code) => ({
           stickerCode: code,
-          unitPrice: 5000,
+          unitPrice: STICKER_PRICE,
         })),
       },
     },

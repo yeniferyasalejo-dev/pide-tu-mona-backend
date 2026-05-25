@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { STICKER_PRICE } from "../utils/validators";
 import { getChargeStatus } from "../services/tpaga";
 import {
   findOrderByTpagaToken,
@@ -57,7 +58,7 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
           buyerName: name,
           orderId: order.id,
           stickers: discounted,
-          totalAmount: discounted.length * 5000,
+          totalAmount: discounted.length * STICKER_PRICE,
           deliveryAddress: order.deliveryAddress || undefined,
         });
       }
@@ -66,7 +67,7 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
       let msg = `*${name}*, tu pago fue confirmado! ✅🎉\n\n`;
       msg += `Compraste *${discounted.length}* laminas:\n`;
       msg += discounted.join(", ") + "\n\n";
-      msg += `Total pagado: *$${new Intl.NumberFormat("es-CO").format(discounted.length * 5000)} COP*\n\n`;
+      msg += `Total pagado: *$${new Intl.NumberFormat("es-CO").format(discounted.length * STICKER_PRICE)} COP*\n\n`;
 
       if (outOfStock.length > 0) {
         msg += `⚠️ ${outOfStock.length} laminas ya no estaban disponibles: ${outOfStock.join(", ")}\n`;

@@ -11,7 +11,7 @@ import {
   markOrderFailed,
   updateUserStep,
 } from "./users";
-import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES } from "../utils/validators";
+import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED } from "../utils/validators";
 import { interpretMessage } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
 
@@ -24,7 +24,7 @@ const HELP_MESSAGE = `📋 *¿En qué te puedo ayudar?*
 • Escribe *comprar* cuando quieras pagar
 • Escribe *ayuda* si te pierdes
 
-💰 Cada lámina cuesta *$5,000 COP*
+💰 Cada lámina cuesta *$${STICKER_PRICE_FORMATTED} COP*
 📦 Te las enviamos a tu dirección`;
 
 const COUNTRIES_MESSAGE = `🌍 *Códigos de países:*
@@ -201,8 +201,8 @@ async function handleStickers(user: User, text: string): Promise<string> {
 
   if (availableCodes.length > 0) {
     response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
-    const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * 5000);
-    response += `💰 *Total: $${total} COP* ($5,000 c/u)\n`;
+    const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * STICKER_PRICE);
+    response += `💰 *Total: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
   }
 
   if (unavailableCodes.length > 0) {
@@ -249,8 +249,8 @@ async function handleDone(user: User, text: string): Promise<string> {
 
       if (availableCodes.length > 0) {
         response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
-        const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * 5000);
-        response += `💰 *Total: $${total} COP* ($5,000 c/u)\n`;
+        const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * STICKER_PRICE);
+        response += `💰 *Total: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
       }
 
       if (unavailableCodes.length > 0) {
@@ -303,7 +303,7 @@ async function startPurchaseFlow(user: User): Promise<string> {
     );
   }
 
-  const total = availableCodes.length * 5000;
+  const total = availableCodes.length * STICKER_PRICE;
   const totalFormatted = new Intl.NumberFormat("es-CO").format(total);
 
   await updateStep(user.id, "WAITING_ADDRESS");
@@ -312,7 +312,7 @@ async function startPurchaseFlow(user: User): Promise<string> {
     `🛒 *Resumen de compra:*\n\n` +
     `Láminas: *${availableCodes.length}*\n` +
     `${availableCodes.join(", ")}\n\n` +
-    `💰 *Total: $${totalFormatted} COP* ($5,000 c/u)\n\n` +
+    `💰 *Total: $${totalFormatted} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n\n` +
     `📦 Para la entrega, envíame tus datos en un solo mensaje:\n\n` +
     `Ciudad:\n` +
     `Barrio:\n` +
