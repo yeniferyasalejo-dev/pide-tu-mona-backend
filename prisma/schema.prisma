@@ -9,10 +9,12 @@ datasource db {
 
 model User {
   id              String           @id @default(uuid())
-  telegramChatId  String           @unique @map("telegram_chat_id")
+  telegramChatId  String?          @unique @map("telegram_chat_id")
+  whatsappPhone   String?          @unique @map("whatsapp_phone")
   name            String?
   email           String?
   onboardingStep  String           @default("START") @map("onboarding_step")
+  channel         String           @default("telegram") // "telegram" | "whatsapp"
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   stickersNeeded  StickerNeeded[]

@@ -1,11 +1,20 @@
 import prisma from "../lib/prisma";
 import { STICKER_PRICE } from "../utils/validators";
 
-export async function findOrCreateUser(chatId: string) {
+export async function findOrCreateUser(chatId: string, channel: "telegram" | "whatsapp" = "telegram") {
+  if (channel === "whatsapp") {
+    return prisma.user.upsert({
+      where: { whatsappPhone: chatId },
+      update: {},
+      create: { whatsappPhone: chatId, channel: "whatsapp", onboardingStep: "START" },
+      include: { stickersNeeded: true },
+    });
+  }
+
   return prisma.user.upsert({
     where: { telegramChatId: chatId },
     update: {},
-    create: { telegramChatId: chatId, onboardingStep: "START" },
+    create: { telegramChatId: chatId, channel: "telegram", onboardingStep: "START" },
     include: { stickersNeeded: true },
   });
 }

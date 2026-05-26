@@ -11,6 +11,7 @@ import axios from "axios";
 import webhookRouter from "./routes/webhook";
 import adminRouter from "./routes/admin";
 import tpagaWebhookRouter from "./routes/tpaga-webhook";
+import whatsappWebhookRouter from "./routes/whatsapp-webhook";
 import { findOrCreateUser } from "./services/users";
 import { processMessage } from "./services/conversation";
 import { sendTelegramMessage, deleteWebhook } from "./services/telegram";
@@ -67,6 +68,7 @@ app.use(express.json());
 app.use(webhookRouter);
 app.use(adminRouter);
 app.use(tpagaWebhookRouter);
+app.use(whatsappWebhookRouter);
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", mode: "polling", timestamp: new Date().toISOString() });

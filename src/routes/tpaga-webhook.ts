@@ -10,8 +10,18 @@ import {
 } from "../services/users";
 import { sendPurchaseConfirmation } from "../services/email";
 import { sendTelegramMessage } from "../services/telegram";
+import { sendWhatsAppMessage } from "../services/whatsapp";
 
 const router = Router();
+
+/** Envía mensaje al usuario por el canal correcto */
+async function sendMessageToUser(user: { telegramChatId?: string | null; whatsappPhone?: string | null; channel?: string }, message: string) {
+  if (user.channel === "whatsapp" && user.whatsappPhone) {
+    await sendWhatsAppMessage(user.whatsappPhone, message);
+  } else if (user.telegramChatId) {
+    await sendTelegramMessage(user.telegramChatId, message);
+  }
+}
 
 /**
  * Webhook de Tpaga — se llama cuando un cobro alcanza estado final
@@ -40,7 +50,6 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
     const chargeStatus = await getChargeStatus(chargeToken);
     console.log(`[Tpaga Webhook] Estado del cobro: ${chargeStatus.status}`);
 
-    const chatId = order.user.telegramChatId;
     const stickerCodes = order.items.map((item) => item.stickerCode);
     const name = order.user.name || "amigo";
 
@@ -75,7 +84,7 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
 
       msg += `Te enviamos la confirmacion a tu correo. Te contactaremos para la entrega. 📦`;
 
-      await sendTelegramMessage(chatId, msg);
+      await sendMessageToUser(order.user, msg);
       await updateUserStep(order.userId, "DONE");
 
     } else if (
@@ -92,7 +101,7 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
       }
       msg += `Puedes intentar de nuevo escribiendo *comprar*.`;
 
-      await sendTelegramMessage(chatId, msg);
+      await sendMessageToUser(order.user, msg);
       await updateUserStep(order.userId, "DONE");
     }
   } catch (error) {
