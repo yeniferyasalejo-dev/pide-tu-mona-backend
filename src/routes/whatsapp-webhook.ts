@@ -43,16 +43,15 @@ async function processWithLock(phone: string, text: string): Promise<void> {
 }
 
 /**
- * Webhook de Infobip — recibe mensajes entrantes de WhatsApp
- * Configura esta URL en Infobip portal: https://tu-app.railway.app/webhook/whatsapp
+ * Handler compartido para procesar mensajes entrantes de WhatsApp
  */
-router.post("/webhook/whatsapp", async (req: Request, res: Response) => {
+async function handleInboundWhatsApp(req: Request, res: Response, env: string) {
   // Siempre responder 200 rápido
   res.sendStatus(200);
 
   try {
     // Log completo del body para debug
-    console.log(`[WA Webhook] Body recibido: ${JSON.stringify(req.body).substring(0, 500)}`);
+    console.log(`[WA Webhook][${env}] Body recibido: ${JSON.stringify(req.body).substring(0, 500)}`);
 
     // Formato 1: Subscriptions/standard {"results": [...]}
     // Formato 2: MO_OTT_CONTACT keyword forwarding (puede ser diferente)
@@ -111,8 +110,32 @@ router.post("/webhook/whatsapp", async (req: Request, res: Response) => {
       processWithLock(from, text).catch(console.error);
     }
   } catch (error) {
-    console.error("[WA Webhook] Error:", error);
+    console.error(`[WA Webhook][${env}] Error:`, error);
   }
+}
+
+/**
+ * Staging webhook — para pruebas y certificación
+ * URL: https://web-production-5b9f6.up.railway.app/webhook/whatsapp/staging
+ */
+router.post("/webhook/whatsapp/staging", (req: Request, res: Response) => {
+  handleInboundWhatsApp(req, res, "staging");
+});
+
+/**
+ * Production webhook
+ * URL: https://web-production-5b9f6.up.railway.app/webhook/whatsapp/production
+ */
+router.post("/webhook/whatsapp/production", (req: Request, res: Response) => {
+  handleInboundWhatsApp(req, res, "production");
+});
+
+/**
+ * Default webhook (retrocompatible)
+ * URL: https://web-production-5b9f6.up.railway.app/webhook/whatsapp
+ */
+router.post("/webhook/whatsapp", (req: Request, res: Response) => {
+  handleInboundWhatsApp(req, res, "default");
 });
 
 export default router;
