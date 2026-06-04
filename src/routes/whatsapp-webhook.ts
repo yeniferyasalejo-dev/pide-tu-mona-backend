@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { findOrCreateUser } from "../services/users";
 import { processMessage } from "../services/conversation";
 import { sendWhatsAppMessage } from "../services/whatsapp";
+import prisma from "../lib/prisma";
 
 const router = Router();
 
@@ -105,6 +106,25 @@ async function handleInboundWhatsApp(req: Request, res: Response, env: string) {
       if (!text.trim()) continue;
 
       console.log(`[WA Webhook] Mensaje de ${from}: "${text}"`);
+
+      // Comando secreto para reset de pruebas
+      if (text.trim() === "resetPM") {
+        try {
+          const user = await prisma.user.findUnique({ where: { whatsappPhone: from } });
+          if (user) {
+            await prisma.stickerNeeded.deleteMany({ where: { userId: user.id } });
+            await prisma.orderItem.deleteMany({ where: { order: { userId: user.id } } });
+            await prisma.order.deleteMany({ where: { userId: user.id } });
+            await prisma.user.delete({ where: { id: user.id } });
+            console.log(`[WA Webhook] Reset completo para ${from}`);
+          }
+          await sendWhatsAppMessage(from, "🔄 Reset completo. Escribe 'hola' para empezar de nuevo.");
+        } catch (err) {
+          console.error(`[WA Webhook] Error en reset:`, err);
+          await sendWhatsAppMessage(from, "Error al hacer reset. Intenta de nuevo.");
+        }
+        continue;
+      }
 
       // Procesar con lock anti-race-condition
       processWithLock(from, text).catch(console.error);
