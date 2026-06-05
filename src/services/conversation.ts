@@ -244,9 +244,17 @@ async function handleStickers(user: User, text: string): Promise<string> {
   await saveStickers(user.id, codes);
   const name = user.name || "amigo";
 
-  const { availableCodes, unavailableCodes } = await checkInventory(codes);
+  // Obtener TODAS las láminas acumuladas del usuario
+  const updatedUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    include: { stickersNeeded: true },
+  });
+  const allCodes = updatedUser?.stickersNeeded.map(s => s.stickerCode) || codes;
 
-  let response = `¡Listo, *${name}*! 📝 Registré *${codes.length}* láminas.\n\n`;
+  const { availableCodes, unavailableCodes } = await checkInventory(allCodes);
+
+  let response = `¡Listo, *${name}*! 📝 Registré *${codes.length}* láminas nuevas.\n`;
+  response += `📋 *Total acumulado: ${allCodes.length} láminas*\n\n`;
 
   if (availableCodes.length > 0) {
     response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
@@ -291,27 +299,8 @@ async function handleDone(user: User, text: string): Promise<string> {
     const aiResult = await interpretMessage(text, name, "DONE");
 
     if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
-      await saveStickers(user.id, aiResult.codes);
-      const { availableCodes, unavailableCodes } = await checkInventory(aiResult.codes);
-
-      let response = `¡Listo, *${name}*! 📝 Registré *${aiResult.codes.length}* láminas.\n\n`;
-
-      if (availableCodes.length > 0) {
-        response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
-        const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * STICKER_PRICE);
-        response += `💰 *Total: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
-      }
-
-      if (unavailableCodes.length > 0) {
-        response += `❌ *No tenemos ${unavailableCodes.length}:* ${unavailableCodes.join(", ")}\n`;
-      }
-
-      if (availableCodes.length > 0) {
-        response += `\nEscribe *comprar* para comprar las disponibles. 🛒`;
-      }
-
-      response += `\nSi necesitas más, solo mándame la lista.`;
-      return response;
+      // Reutilizar handleStickers para mantener lógica de acumulación
+      return handleStickers(user, text);
     }
 
     if (aiResult.type === "chat" && aiResult.reply) {

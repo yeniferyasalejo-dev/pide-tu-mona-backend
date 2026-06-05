@@ -34,8 +34,7 @@ export async function updateUserEmail(userId: string, email: string) {
 }
 
 export async function saveStickers(userId: string, stickerCodes: string[]) {
-  await prisma.stickerNeeded.deleteMany({ where: { userId } });
-
+  // Se acumulan las láminas — no se borran las anteriores
   for (const code of stickerCodes) {
     await prisma.stickerNeeded.upsert({
       where: { userId_stickerCode: { userId, stickerCode: code } },
