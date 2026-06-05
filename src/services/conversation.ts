@@ -17,6 +17,55 @@ import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
 
+// ==================== DETECCIÓN DE INTENCIÓN ====================
+
+/**
+ * Detecta si el usuario quiere comprar/pagar
+ * Ej: "comprar", "pagar", "quiero comprar", "listo para pagar", "dale compro"
+ */
+function isIntentPurchase(text: string): boolean {
+  const keywords = [
+    "comprar", "compro", "pagar", "pago", "quiero comprar",
+    "voy a comprar", "dale compro", "listo para pagar",
+    "quiero pagar", "vamos a pagar", "le doy", "hagale",
+    "hágale", "dale", "listo", "va", "vamos",
+    "quiero las laminas", "quiero las láminas",
+    "si compro", "sí compro", "las quiero",
+  ];
+  return keywords.some(kw => text === kw || text.includes(kw));
+}
+
+/**
+ * Detecta si el usuario dice sí/confirma
+ * Ej: "si", "sí", "dale", "claro", "pagar", "comprar", "correcto"
+ */
+function isIntentYes(text: string): boolean {
+  const keywords = [
+    "si", "sí", "dale", "claro", "ok", "okay", "okey",
+    "correcto", "confirmo", "confirmar", "va", "vamos",
+    "hagale", "hágale", "listo", "pagar", "comprar",
+    "si claro", "claro que si", "claro que sí",
+    "por supuesto", "afirmativo", "eso", "todo bien",
+    "esta bien", "está bien", "de una", "perfecto",
+    "si señor", "sí señor", "si señora", "sí señora",
+    "adelante", "proceder", "continuar", "sigue",
+  ];
+  return keywords.some(kw => text === kw || text.includes(kw));
+}
+
+/**
+ * Detecta si el usuario quiere cancelar
+ * Ej: "cancelar", "no", "no quiero", "dejalo", "olvídalo"
+ */
+function isIntentCancel(text: string): boolean {
+  const keywords = [
+    "cancelar", "cancela", "no", "no quiero", "dejalo",
+    "déjalo", "olvidalo", "olvídalo", "nada", "ya no",
+    "no gracias", "mejor no", "paso", "nel",
+  ];
+  return keywords.some(kw => text === kw || text.includes(kw));
+}
+
 const HELP_MESSAGE = `📋 *¿En qué te puedo ayudar?*
 
 • Mándame las láminas que necesitas, ej: \`colombia 12, mexico 6\`
@@ -67,7 +116,7 @@ export async function processMessage(
   }
 
   // Comando cancelar — cancela compra en cualquier estado de compra
-  if (lower === "cancelar") {
+  if (isIntentCancel(lower)) {
     const purchaseStates = ["WAITING_ADDRESS", "WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_DOCUMENT", "WAITING_PAYMENT"];
     if (purchaseStates.includes(user.onboardingStep)) {
       const pendingOrder = await findPendingOrder(user.id);
@@ -222,8 +271,8 @@ async function handleDone(user: User, text: string): Promise<string> {
   const name = user.name || "amigo";
   const lower = text.toLowerCase().trim();
 
-  // Comando comprar
-  if (lower === "comprar") {
+  // Comando comprar — detecta variaciones
+  if (isIntentPurchase(lower)) {
     return startPurchaseFlow(user);
   }
 
@@ -362,7 +411,7 @@ async function handleAddress(user: User, text: string): Promise<string> {
 async function handlePurchaseConfirm(user: User, text: string): Promise<string> {
   const lower = text.toLowerCase().trim();
 
-  if (lower === "si" || lower === "sí") {
+  if (isIntentYes(lower)) {
     // Obtener bancos y mostrar lista
     try {
       const banks = await getBanks();
@@ -383,7 +432,7 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
     }
   }
 
-  if (lower === "no" || lower === "cancelar") {
+  if (isIntentCancel(lower)) {
     await updateStep(user.id, "DONE");
     return "Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍";
   }
