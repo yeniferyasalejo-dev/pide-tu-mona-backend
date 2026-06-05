@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { findOrCreateUser } from "../services/users";
 import { processMessage } from "../services/conversation";
 import { sendWhatsAppMessage } from "../services/whatsapp";
+import { clearHistory } from "../services/ai";
 import prisma from "../lib/prisma";
 
 const router = Router();
@@ -116,6 +117,7 @@ async function handleInboundWhatsApp(req: Request, res: Response, env: string) {
             await prisma.orderItem.deleteMany({ where: { order: { userId: user.id } } });
             await prisma.order.deleteMany({ where: { userId: user.id } });
             await prisma.user.delete({ where: { id: user.id } });
+            clearHistory(user.id);
             console.log(`[WA Webhook] Reset completo para ${from}`);
           }
           await sendWhatsAppMessage(from, "🔄 Reset completo. Escribe 'hola' para empezar de nuevo.");

@@ -12,7 +12,7 @@ import {
   updateUserStep,
 } from "./users";
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED } from "../utils/validators";
-import { interpretMessage } from "./ai";
+import { interpretMessage, addToHistory, clearHistory } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
@@ -116,24 +116,34 @@ export async function processMessage(
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
+  // Guardar mensaje del usuario en historial
+  addToHistory(user.id, "user", trimmed);
+
+  // Helper para guardar respuesta en historial antes de retornar
+  const reply = async (response: string | Promise<string>): Promise<string> => {
+    const r = await response;
+    addToHistory(user.id, "assistant", r.substring(0, 200)); // solo guardar resumen
+    return r;
+  };
+
   // Comandos globales
   if (lower === "ayuda" || lower === "/ayuda" || lower === "/help") {
-    return HELP_MESSAGE;
+    return reply(HELP_MESSAGE);
   }
 
   if (lower === "paises" || lower === "/paises") {
-    return COUNTRIES_MESSAGE;
+    return reply(COUNTRIES_MESSAGE);
   }
 
   // Comando carrito — ver láminas acumuladas
   if (isIntentCart(lower)) {
-    return handleCart(user);
+    return reply(handleCart(user));
   }
 
   // Comando /start — reinicia
   if (lower === "/start") {
     await updateStep(user.id, "START");
-    return handleStart(user);
+    return reply(handleStart(user));
   }
 
   // Comando cancelar — cancela compra en cualquier estado de compra
@@ -145,33 +155,33 @@ export async function processMessage(
         await markOrderFailed(pendingOrder.id);
       }
       await updateStep(user.id, "DONE");
-      return `Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍`;
+      return reply(`Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍`);
     }
   }
 
   switch (user.onboardingStep) {
     case "START":
-      return handleStart(user);
+      return reply(handleStart(user));
     case "WAITING_NAME":
-      return handleName(user, trimmed);
+      return reply(handleName(user, trimmed));
     case "WAITING_EMAIL":
-      return handleEmail(user, trimmed);
+      return reply(handleEmail(user, trimmed));
     case "WAITING_STICKERS":
-      return handleStickers(user, trimmed);
+      return reply(handleStickers(user, trimmed));
     case "DONE":
-      return handleDone(user, trimmed);
+      return reply(handleDone(user, trimmed));
     case "WAITING_ADDRESS":
-      return handleAddress(user, trimmed);
+      return reply(handleAddress(user, trimmed));
     case "WAITING_PURCHASE_CONFIRM":
-      return handlePurchaseConfirm(user, trimmed);
+      return reply(handlePurchaseConfirm(user, trimmed));
     case "WAITING_BANK_SELECTION":
-      return handleBankSelection(user, trimmed);
+      return reply(handleBankSelection(user, trimmed));
     case "WAITING_DOCUMENT":
-      return handleDocument(user, trimmed);
+      return reply(handleDocument(user, trimmed));
     case "WAITING_PAYMENT":
-      return handleWaitingPayment(user, trimmed);
+      return reply(handleWaitingPayment(user, trimmed));
     default:
-      return "Algo salió mal. Escribe *ayuda* para ver los comandos disponibles.";
+      return reply("Algo salió mal. Escribe *ayuda* para ver los comandos disponibles.");
   }
 }
 
@@ -238,7 +248,7 @@ async function handleStickers(user: User, text: string): Promise<string> {
   // Si el parser no detecta nada, intentar con AI
   if (codes.length === 0) {
     try {
-      const aiResult = await interpretMessage(text, user.name || "amigo", "WAITING_STICKERS");
+      const aiResult = await interpretMessage(text, user.name || "amigo", "WAITING_STICKERS", user.id);
       if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
         codes = aiResult.codes;
       }
@@ -317,7 +327,7 @@ async function handleDone(user: User, text: string): Promise<string> {
 
   // Si no son láminas detectables, usar AI para interpretar
   try {
-    const aiResult = await interpretMessage(text, name, "DONE");
+    const aiResult = await interpretMessage(text, name, "DONE", user.id);
 
     if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
       // Reutilizar handleStickers para mantener lógica de acumulación

@@ -4,6 +4,56 @@ const client = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 10000 })
   : null;
 
+// ==================== HISTORIAL DE CONVERSACIÓN ====================
+
+interface ChatEntry {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+const conversationHistory = new Map<string, ChatEntry[]>();
+const MAX_HISTORY = 10; // últimos 10 mensajes
+const HISTORY_TTL = 30 * 60 * 1000; // 30 minutos
+
+/**
+ * Guarda un mensaje en el historial del usuario
+ */
+export function addToHistory(userId: string, role: "user" | "assistant", content: string): void {
+  if (!conversationHistory.has(userId)) {
+    conversationHistory.set(userId, []);
+  }
+  const history = conversationHistory.get(userId)!;
+  history.push({ role, content, timestamp: Date.now() });
+
+  // Limpiar mensajes viejos (más de 30 min)
+  const cutoff = Date.now() - HISTORY_TTL;
+  while (history.length > 0 && history[0].timestamp < cutoff) {
+    history.shift();
+  }
+
+  // Mantener solo los últimos N
+  if (history.length > MAX_HISTORY) {
+    history.splice(0, history.length - MAX_HISTORY);
+  }
+}
+
+/**
+ * Obtiene el historial reciente del usuario
+ */
+function getHistory(userId: string): ChatEntry[] {
+  const history = conversationHistory.get(userId) || [];
+  const cutoff = Date.now() - HISTORY_TTL;
+  return history.filter(h => h.timestamp >= cutoff);
+}
+
+/**
+ * Limpia el historial de un usuario (para resetPM)
+ */
+export function clearHistory(userId: string): void {
+  conversationHistory.delete(userId);
+}
+
 const SYSTEM_PROMPT = `Eres "Mona", la asistente virtual de "Pide Tu Mona", una tienda de láminas/monas del álbum Panini del Mundial FIFA 2026.
 
 PERSONALIDAD:
@@ -33,6 +83,12 @@ const STICKER_EXTRACTION_PROMPT = `Los códigos válidos de láminas son:
 - FIFA World Cup History: FWC9 a FWC19
 - Coca-Cola: C1 a C14
 
+IMPORTANTE — USA EL CONTEXTO DE LA CONVERSACIÓN:
+- Si el usuario mencionó un país antes y luego dice números sueltos como "la 11 y la 12" o "solo la 5", usa el MISMO país del contexto anterior.
+- Ejemplo: si antes dijo "las de Brasil" y ahora dice "también la 11 y 12" → BRA11, BRA12
+- Ejemplo: si antes dijo "México 1 al 5" y ahora dice "y la 8" → MEX8
+- Si no hay contexto previo de país, pide aclaración.
+
 Ejemplos de interpretación:
 - "todas las de cocacola" → C1,C2,...,C14
 - "todas las de colombia" → COL1,COL2,...,COL20
@@ -40,6 +96,8 @@ Ejemplos de interpretación:
 - "necesito la 3, 7 y 15 de argentina" → ARG3,ARG7,ARG15
 - "dame brasil 5 al 10" → BRA5,BRA6,BRA7,BRA8,BRA9,BRA10
 - "las que me faltan de fifa son 12, 15 y 18" → FWC12,FWC15,FWC18
+- "quiero otras" (después de hablar de México) → pide que aclare cuáles
+- "solo la 11 y la 12" (después de pedir Brasil) → BRA11,BRA12
 
 Si detectas que el usuario está pidiendo láminas, responde SOLO con este JSON:
 {"type":"stickers","codes":["COL12","MEX6"]}
@@ -50,11 +108,13 @@ Si NO está pidiendo láminas, responde con:
 /**
  * Interpreta mensajes libres del usuario. Si detecta que pide láminas,
  * extrae los códigos. Si no, responde como chat natural.
+ * Usa historial de conversación para mantener contexto.
  */
 export async function interpretMessage(
   userMessage: string,
   userName: string,
-  currentState: string
+  currentState: string,
+  userId?: string
 ): Promise<{ type: "stickers"; codes: string[] } | { type: "chat"; reply: string }> {
   if (!client) {
     console.log("[AI] No OPENAI_API_KEY configurada");
@@ -66,16 +126,29 @@ export async function interpretMessage(
 
     const stateContext = getStateContext(currentState, userName);
 
+    // Construir mensajes con historial de conversación
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      {
+        role: "system",
+        content: `${SYSTEM_PROMPT}\n\n${STICKER_EXTRACTION_PROMPT}\n\n${stateContext}`,
+      },
+    ];
+
+    // Agregar historial reciente para contexto
+    if (userId) {
+      const history = getHistory(userId);
+      for (const entry of history) {
+        messages.push({ role: entry.role, content: entry.content });
+      }
+    }
+
+    // Agregar mensaje actual
+    messages.push({ role: "user", content: userMessage });
+
     const result = await Promise.race([
       client.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `${SYSTEM_PROMPT}\n\n${STICKER_EXTRACTION_PROMPT}\n\n${stateContext}`,
-          },
-          { role: "user", content: userMessage },
-        ],
+        messages,
         max_tokens: 500,
         temperature: 0.7,
       }),
