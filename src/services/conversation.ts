@@ -54,6 +54,21 @@ function isIntentYes(text: string): boolean {
 }
 
 /**
+ * Detecta si el usuario quiere ver su carrito
+ * Ej: "carrito", "que llevo", "cuantas llevo", "mi lista"
+ */
+function isIntentCart(text: string): boolean {
+  const keywords = [
+    "carrito", "mi carrito", "ver carrito", "que llevo",
+    "qué llevo", "cuantas llevo", "cuántas llevo",
+    "mi lista", "mis laminas", "mis láminas",
+    "que tengo", "qué tengo", "cuantas tengo", "cuántas tengo",
+    "mi pedido", "ver pedido", "resumen",
+  ];
+  return keywords.some(kw => text === kw || text.includes(kw));
+}
+
+/**
  * Detecta si el usuario quiere cancelar
  * Ej: "cancelar", "no", "no quiero", "dejalo", "olvídalo"
  */
@@ -69,6 +84,7 @@ function isIntentCancel(text: string): boolean {
 const HELP_MESSAGE = `📋 *¿En qué te puedo ayudar?*
 
 • Mándame las láminas que necesitas, ej: \`colombia 12, mexico 6\`
+• Escribe *carrito* para ver tus láminas acumuladas
 • Escribe *paises* para ver los códigos
 • Escribe *comprar* cuando quieras pagar
 • Escribe *ayuda* si te pierdes
@@ -107,6 +123,11 @@ export async function processMessage(
 
   if (lower === "paises" || lower === "/paises") {
     return COUNTRIES_MESSAGE;
+  }
+
+  // Comando carrito — ver láminas acumuladas
+  if (isIntentCart(lower)) {
+    return handleCart(user);
   }
 
   // Comando /start — reinicia
@@ -317,6 +338,49 @@ async function handleDone(user: User, text: string): Promise<string> {
     `¿Ya tienes láminas? Escribe *comprar*\n` +
     `¿Perdido? Escribe *ayuda* 🙌`
   );
+}
+
+// ==================== CARRITO ====================
+
+async function handleCart(user: User): Promise<string> {
+  const name = user.name || "amigo";
+
+  const userData = await prisma.user.findUnique({
+    where: { id: user.id },
+    include: { stickersNeeded: true },
+  });
+
+  const allCodes = userData?.stickersNeeded.map(s => s.stickerCode) || [];
+
+  if (allCodes.length === 0) {
+    return (
+      `🛒 *Tu carrito está vacío, ${name}.*\n\n` +
+      `Mándame las láminas que necesitas, ej: \`colombia 12, mexico 6\``
+    );
+  }
+
+  const { availableCodes, unavailableCodes } = await checkInventory(allCodes);
+
+  let response = `🛒 *Tu carrito, ${name}:*\n\n`;
+  response += `📋 *Total: ${allCodes.length} láminas*\n\n`;
+
+  if (availableCodes.length > 0) {
+    response += `✅ *Disponibles (${availableCodes.length}):* ${availableCodes.join(", ")}\n`;
+    const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * STICKER_PRICE);
+    response += `💰 *Precio: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+  }
+
+  if (unavailableCodes.length > 0) {
+    response += `\n❌ *No disponibles (${unavailableCodes.length}):* ${unavailableCodes.join(", ")}\n`;
+  }
+
+  if (availableCodes.length > 0) {
+    response += `\nEscribe *comprar* para comprar las disponibles. 🛒`;
+  }
+
+  response += `\nMándame más láminas para agregarlas.`;
+
+  return response;
 }
 
 // ==================== FLUJO DE COMPRA ====================
