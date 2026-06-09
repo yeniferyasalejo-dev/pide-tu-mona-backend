@@ -14,6 +14,7 @@ import {
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
 import { interpretMessage, addToHistory, clearHistory } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
+import { startChargePolling } from "./payment-processor";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
 
@@ -601,7 +602,7 @@ async function handleDocument(user: User, text: string): Promise<string> {
     // Crear cobro en Tpaga
     const redirectUrl = APP_BASE_URL
       ? `${APP_BASE_URL}/payment/status?token=${order.id}`
-      : "https://t.me/mundial26_bot";
+      : "https://wa.me/573011248084";
 
     const charge = await createCharge({
       bankCode: selectedBank.code,
@@ -624,6 +625,9 @@ async function handleDocument(user: User, text: string): Promise<string> {
     });
 
     await updateStep(user.id, "WAITING_PAYMENT");
+
+    // Iniciar polling para verificar el pago automáticamente
+    startChargePolling(charge.token);
 
     // Limpiar cache
     userBanksCache.delete(user.id);

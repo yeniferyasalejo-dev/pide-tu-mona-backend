@@ -1,33 +1,12 @@
 import { Router, Request, Response } from "express";
-import { STICKER_PRICE } from "../utils/validators";
-import { getChargeStatus } from "../services/tpaga";
-import {
-  findOrderByTpagaToken,
-  markOrderPaid,
-  markOrderFailed,
-  discountInventory,
-  updateUserStep,
-} from "../services/users";
-import { sendPurchaseConfirmation } from "../services/email";
-import { sendTelegramMessage } from "../services/telegram";
-import { sendWhatsAppMessage } from "../services/whatsapp";
+import { processChargeResult, stopChargePolling } from "../services/payment-processor";
 
 const router = Router();
-
-/** Envía mensaje al usuario por el canal correcto */
-async function sendMessageToUser(user: { telegramChatId?: string | null; whatsappPhone?: string | null; channel?: string }, message: string) {
-  if (user.channel === "whatsapp" && user.whatsappPhone) {
-    await sendWhatsAppMessage(user.whatsappPhone, message);
-  } else if (user.telegramChatId) {
-    await sendTelegramMessage(user.telegramChatId, message);
-  }
-}
 
 /**
  * Webhook de Tpaga — se llama cuando un cobro alcanza estado final
  */
 router.post("/tpaga/webhook", async (req: Request, res: Response) => {
-  // Siempre responder 200 para que Tpaga no reintente
   res.sendStatus(200);
 
   try {
@@ -39,71 +18,8 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
 
     console.log(`[Tpaga Webhook] Recibido para token: ${chargeToken}`);
 
-    // Buscar la orden en nuestra base de datos
-    const order = await findOrderByTpagaToken(chargeToken);
-    if (!order) {
-      console.error(`[Tpaga Webhook] Orden no encontrada para token: ${chargeToken}`);
-      return;
-    }
-
-    // Verificar el estado directamente con Tpaga (nunca confiar solo en el webhook)
-    const chargeStatus = await getChargeStatus(chargeToken);
-    console.log(`[Tpaga Webhook] Estado del cobro: ${chargeStatus.status}`);
-
-    const stickerCodes = order.items.map((item) => item.stickerCode);
-    const name = order.user.name || "amigo";
-
-    if (chargeStatus.status === "settled" || chargeStatus.status === "authorized") {
-      // PAGO EXITOSO
-      await markOrderPaid(order.id);
-
-      // Descontar inventario
-      const { discounted, outOfStock } = await discountInventory(stickerCodes);
-
-      // Enviar email de confirmacion
-      if (order.user.email) {
-        await sendPurchaseConfirmation({
-          to: order.user.email,
-          buyerName: name,
-          orderId: order.id,
-          stickers: discounted,
-          totalAmount: discounted.length * STICKER_PRICE,
-          deliveryAddress: order.deliveryAddress || undefined,
-        });
-      }
-
-      // Notificar por Telegram
-      let msg = `*${name}*, tu pago fue confirmado! ✅🎉\n\n`;
-      msg += `Compraste *${discounted.length}* laminas:\n`;
-      msg += discounted.join(", ") + "\n\n";
-      msg += `Total pagado: *$${new Intl.NumberFormat("es-CO").format(discounted.length * STICKER_PRICE)} COP*\n\n`;
-
-      if (outOfStock.length > 0) {
-        msg += `⚠️ ${outOfStock.length} laminas ya no estaban disponibles: ${outOfStock.join(", ")}\n`;
-      }
-
-      msg += `Te enviamos la confirmacion a tu correo. Te contactaremos para la entrega. 📦`;
-
-      await sendMessageToUser(order.user, msg);
-      await updateUserStep(order.userId, "DONE");
-
-    } else if (
-      chargeStatus.status === "charge-rejected" ||
-      chargeStatus.status === "rejected" ||
-      chargeStatus.status === "failed"
-    ) {
-      // PAGO FALLIDO
-      await markOrderFailed(order.id);
-
-      let msg = `*${name}*, tu pago no se pudo completar 😔\n\n`;
-      if (chargeStatus.rejectedReason) {
-        msg += `Razon: ${chargeStatus.rejectedReason}\n\n`;
-      }
-      msg += `Puedes intentar de nuevo escribiendo *comprar*.`;
-
-      await sendMessageToUser(order.user, msg);
-      await updateUserStep(order.userId, "DONE");
-    }
+    stopChargePolling(chargeToken);
+    await processChargeResult(chargeToken);
   } catch (error) {
     console.error("[Tpaga Webhook] Error:", error);
   }
@@ -111,7 +27,6 @@ router.post("/tpaga/webhook", async (req: Request, res: Response) => {
 
 /**
  * Pagina de retorno despues de pagar en PSE
- * El usuario es redirigido aqui despues de completar/cancelar el pago en el banco
  */
 router.get("/payment/status", (_req: Request, res: Response) => {
   res.send(`
@@ -134,11 +49,11 @@ router.get("/payment/status", (_req: Request, res: Response) => {
         <div class="emoji">⚽</div>
         <h1>Pide Tu Mona</h1>
         <p><strong>Estamos procesando tu pago...</strong></p>
-        <p>Te notificaremos por Telegram cuando se confirme.</p>
+        <p>Te notificaremos por WhatsApp cuando se confirme.</p>
         <p>Tambien recibiras un correo de confirmacion con el detalle de tu compra y los pasos a seguir para la entrega. 📧</p>
         <p>Puedes cerrar esta pagina.</p>
         <p style="margin-top:20px;">
-          <a href="https://t.me/mundial26_bot" style="color:#1a7a2e;font-weight:bold;">Volver al bot de Telegram</a>
+          <a href="https://wa.me/573011248084" style="color:#1a7a2e;font-weight:bold;">Volver a WhatsApp</a>
         </p>
       </div>
     </body>
