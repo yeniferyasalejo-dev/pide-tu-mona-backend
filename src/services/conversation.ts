@@ -11,7 +11,7 @@ import {
   markOrderFailed,
   updateUserStep,
 } from "./users";
-import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED } from "../utils/validators";
+import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
 import { interpretMessage, addToHistory, clearHistory } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
 
@@ -376,8 +376,12 @@ async function handleCart(user: User): Promise<string> {
 
   if (availableCodes.length > 0) {
     response += `✅ *Disponibles (${availableCodes.length}):* ${availableCodes.join(", ")}\n`;
-    const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * STICKER_PRICE);
-    response += `💰 *Precio: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+    const subtotal = availableCodes.length * STICKER_PRICE;
+    const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+    response += `💰 Láminas: $${new Intl.NumberFormat("es-CO").format(subtotal)} COP ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+    response += `📦 Envío: $${DELIVERY_FEE_FORMATTED} COP\n`;
+    response += `🏦 PSE: $${PSE_FEE_FORMATTED} COP\n`;
+    response += `🧾 *Total: $${new Intl.NumberFormat("es-CO").format(grandTotal)} COP*\n`;
   }
 
   if (unavailableCodes.length > 0) {
@@ -415,8 +419,10 @@ async function startPurchaseFlow(user: User): Promise<string> {
     );
   }
 
-  const total = availableCodes.length * STICKER_PRICE;
-  const totalFormatted = new Intl.NumberFormat("es-CO").format(total);
+  const subtotal = availableCodes.length * STICKER_PRICE;
+  const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+  const subtotalFormatted = new Intl.NumberFormat("es-CO").format(subtotal);
+  const grandTotalFormatted = new Intl.NumberFormat("es-CO").format(grandTotal);
 
   await updateStep(user.id, "WAITING_ADDRESS");
 
@@ -424,7 +430,11 @@ async function startPurchaseFlow(user: User): Promise<string> {
     `🛒 *Resumen de compra:*\n\n` +
     `Láminas: *${availableCodes.length}*\n` +
     `${availableCodes.join(", ")}\n\n` +
-    `💰 *Total: $${totalFormatted} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n\n` +
+    `💰 *Desglose:*\n` +
+    `• Láminas: $${subtotalFormatted} COP ($${STICKER_PRICE_FORMATTED} c/u)\n` +
+    `• Envío: $${DELIVERY_FEE_FORMATTED} COP\n` +
+    `• Comisión PSE: $${PSE_FEE_FORMATTED} COP\n` +
+    `• *Total a pagar: $${grandTotalFormatted} COP*\n\n` +
     `📦 Para la entrega, envíame tus datos en un solo mensaje:\n\n` +
     `Ciudad:\n` +
     `Barrio:\n` +

@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import { STICKER_PRICE } from "../utils/validators";
+import { STICKER_PRICE, DELIVERY_FEE, PSE_FEE } from "../utils/validators";
 
 export async function findOrCreateUser(chatId: string, channel: "telegram" | "whatsapp" = "telegram") {
   if (channel === "whatsapp") {
@@ -110,7 +110,7 @@ export async function getAvailableStickersForUser(userId: string) {
  * Crea una orden de compra
  */
 export async function createOrder(userId: string, stickerCodes: string[], deliveryAddress?: string) {
-  const totalAmount = stickerCodes.length * STICKER_PRICE;
+  const totalAmount = stickerCodes.length * STICKER_PRICE + DELIVERY_FEE + PSE_FEE;
 
   return prisma.order.create({
     data: {

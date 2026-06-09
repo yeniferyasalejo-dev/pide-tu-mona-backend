@@ -1,6 +1,10 @@
-// Precio por lámina en COP — cambiar aquí actualiza todo el sistema
+// Precios en COP — cambiar aquí actualiza todo el sistema
 export const STICKER_PRICE = 1500;
 export const STICKER_PRICE_FORMATTED = new Intl.NumberFormat("es-CO").format(STICKER_PRICE);
+export const DELIVERY_FEE = 5000;
+export const DELIVERY_FEE_FORMATTED = new Intl.NumberFormat("es-CO").format(DELIVERY_FEE);
+export const PSE_FEE = 500;
+export const PSE_FEE_FORMATTED = new Intl.NumberFormat("es-CO").format(PSE_FEE);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
