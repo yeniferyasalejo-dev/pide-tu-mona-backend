@@ -142,7 +142,22 @@ export async function processMessage(
     return r;
   };
 
-  // Comandos globales
+  // Estados que esperan texto libre — saltar directo al handler sin detección de intención
+  const freeTextStates = ["WAITING_ADDRESS", "WAITING_NAME", "WAITING_EMAIL", "WAITING_DOCUMENT"];
+  if (freeTextStates.includes(user.onboardingStep)) {
+    switch (user.onboardingStep) {
+      case "WAITING_NAME":
+        return reply(handleName(user, trimmed));
+      case "WAITING_EMAIL":
+        return reply(handleEmail(user, trimmed));
+      case "WAITING_ADDRESS":
+        return reply(handleAddress(user, trimmed));
+      case "WAITING_DOCUMENT":
+        return reply(handleDocument(user, trimmed));
+    }
+  }
+
+  // Comandos globales (solo para estados que NO esperan texto libre)
   if (lower === "ayuda" || lower === "/ayuda" || lower === "/help") {
     return reply(HELP_MESSAGE);
   }
@@ -162,9 +177,9 @@ export async function processMessage(
     return reply(handleStart(user));
   }
 
-  // Comando cancelar — cancela compra en estados de compra (excepto WAITING_ADDRESS donde el handler ya maneja "cancelar")
+  // Comando cancelar — cancela compra en estados de compra
   if (isIntentCancel(lower)) {
-    const purchaseStates = ["WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_DOCUMENT", "WAITING_PAYMENT"];
+    const purchaseStates = ["WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_PAYMENT"];
     if (purchaseStates.includes(user.onboardingStep)) {
       const pendingOrder = await findPendingOrder(user.id);
       if (pendingOrder) {
