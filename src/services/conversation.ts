@@ -24,15 +24,19 @@ const APP_BASE_URL = process.env.APP_BASE_URL || "";
  * Ej: "comprar", "pagar", "quiero comprar", "listo para pagar", "dale compro"
  */
 function isIntentPurchase(text: string): boolean {
-  const keywords = [
+  // Palabras cortas — solo como mensaje completo
+  const exactOnly = ["dale", "listo", "va", "vamos"];
+  if (exactOnly.includes(text)) return true;
+
+  // Frases que pueden estar contenidas
+  const phrases = [
     "comprar", "compro", "pagar", "pago", "quiero comprar",
     "voy a comprar", "dale compro", "listo para pagar",
     "quiero pagar", "vamos a pagar", "le doy", "hagale",
-    "hágale", "dale", "listo", "va", "vamos",
-    "quiero las laminas", "quiero las láminas",
+    "hágale", "quiero las laminas", "quiero las láminas",
     "si compro", "sí compro", "las quiero",
   ];
-  return keywords.some(kw => text === kw || text.includes(kw));
+  return phrases.some(kw => text.includes(kw));
 }
 
 /**
@@ -40,17 +44,24 @@ function isIntentPurchase(text: string): boolean {
  * Ej: "si", "sí", "dale", "claro", "pagar", "comprar", "correcto"
  */
 function isIntentYes(text: string): boolean {
-  const keywords = [
-    "si", "sí", "dale", "claro", "ok", "okay", "okey",
-    "correcto", "confirmo", "confirmar", "va", "vamos",
-    "hagale", "hágale", "listo", "pagar", "comprar",
-    "si claro", "claro que si", "claro que sí",
-    "por supuesto", "afirmativo", "eso", "todo bien",
-    "esta bien", "está bien", "de una", "perfecto",
-    "si señor", "sí señor", "si señora", "sí señora",
-    "adelante", "proceder", "continuar", "sigue",
+  // Palabras cortas — solo como mensaje completo para evitar falsos positivos
+  const exactOnly = [
+    "si", "sí", "dale", "ok", "okay", "okey", "va", "eso",
+    "listo", "perfecto", "claro", "sigue",
   ];
-  return keywords.some(kw => text === kw || text.includes(kw));
+  if (exactOnly.includes(text)) return true;
+
+  // Frases que pueden estar contenidas
+  const phrases = [
+    "correcto", "confirmo", "confirmar", "vamos",
+    "hagale", "hágale", "pagar", "comprar",
+    "si claro", "claro que si", "claro que sí",
+    "por supuesto", "afirmativo", "todo bien",
+    "esta bien", "está bien", "de una",
+    "si señor", "sí señor", "si señora", "sí señora",
+    "adelante", "proceder", "continuar",
+  ];
+  return phrases.some(kw => text.includes(kw));
 }
 
 /**
@@ -73,12 +84,17 @@ function isIntentCart(text: string): boolean {
  * Ej: "cancelar", "no", "no quiero", "dejalo", "olvídalo"
  */
 function isIntentCancel(text: string): boolean {
-  const keywords = [
-    "cancelar", "cancela", "no", "no quiero", "dejalo",
-    "déjalo", "olvidalo", "olvídalo", "nada", "ya no",
-    "no gracias", "mejor no", "paso", "nel",
+  // Palabras exactas (solo si el mensaje completo es esta palabra)
+  const exactOnly = ["no", "nada", "paso", "nel"];
+  if (exactOnly.includes(text)) return true;
+
+  // Frases que pueden estar contenidas en el mensaje
+  const phrases = [
+    "cancelar", "cancela", "no quiero", "dejalo",
+    "déjalo", "olvidalo", "olvídalo", "ya no",
+    "no gracias", "mejor no",
   ];
-  return keywords.some(kw => text === kw || text.includes(kw));
+  return phrases.some(kw => text.includes(kw));
 }
 
 const HELP_MESSAGE = `📋 *¿En qué te puedo ayudar?*
@@ -146,9 +162,9 @@ export async function processMessage(
     return reply(handleStart(user));
   }
 
-  // Comando cancelar — cancela compra en cualquier estado de compra
+  // Comando cancelar — cancela compra en estados de compra (excepto WAITING_ADDRESS donde el handler ya maneja "cancelar")
   if (isIntentCancel(lower)) {
-    const purchaseStates = ["WAITING_ADDRESS", "WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_DOCUMENT", "WAITING_PAYMENT"];
+    const purchaseStates = ["WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_DOCUMENT", "WAITING_PAYMENT"];
     if (purchaseStates.includes(user.onboardingStep)) {
       const pendingOrder = await findPendingOrder(user.id);
       if (pendingOrder) {
