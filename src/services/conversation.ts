@@ -122,9 +122,10 @@ ${Object.entries(VALID_COUNTRIES)
 Ejemplo: \`MEX6, ARG12, FWC15, C7\`
 También puedes escribir: \`mexico 6, argentina 12\``;
 
-// Cache temporal de bancos y dirección por usuario
+// Cache temporal de bancos, dirección y datos de pago por usuario
 const userBanksCache = new Map<string, { code: string; name: string }[]>();
 const userAddressCache = new Map<string, string>();
+const userPaymentData = new Map<string, { personType?: string; docType?: string; docNumber?: string; paymentEmail?: string }>();
 
 export async function processMessage(
   user: User,
@@ -144,7 +145,7 @@ export async function processMessage(
   };
 
   // Estados que esperan texto libre — saltar directo al handler sin detección de intención
-  const freeTextStates = ["WAITING_ADDRESS", "WAITING_NAME", "WAITING_EMAIL", "WAITING_DOCUMENT"];
+  const freeTextStates = ["WAITING_ADDRESS", "WAITING_NAME", "WAITING_EMAIL", "WAITING_DOCUMENT", "WAITING_PAYMENT_EMAIL"];
   if (freeTextStates.includes(user.onboardingStep)) {
     switch (user.onboardingStep) {
       case "WAITING_NAME":
@@ -155,6 +156,8 @@ export async function processMessage(
         return reply(handleAddress(user, trimmed));
       case "WAITING_DOCUMENT":
         return reply(handleDocument(user, trimmed));
+      case "WAITING_PAYMENT_EMAIL":
+        return reply(handlePaymentEmail(user, trimmed));
     }
   }
 
@@ -180,7 +183,7 @@ export async function processMessage(
 
   // Comando cancelar — cancela compra en estados de compra
   if (isIntentCancel(lower)) {
-    const purchaseStates = ["WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_PAYMENT"];
+    const purchaseStates = ["WAITING_PURCHASE_CONFIRM", "WAITING_BANK_SELECTION", "WAITING_PERSON_TYPE", "WAITING_DOC_TYPE", "WAITING_PAYMENT"];
     if (purchaseStates.includes(user.onboardingStep)) {
       const pendingOrder = await findPendingOrder(user.id);
       if (pendingOrder) {
@@ -208,8 +211,14 @@ export async function processMessage(
       return reply(handlePurchaseConfirm(user, trimmed));
     case "WAITING_BANK_SELECTION":
       return reply(handleBankSelection(user, trimmed));
+    case "WAITING_PERSON_TYPE":
+      return reply(handlePersonType(user, trimmed));
+    case "WAITING_DOC_TYPE":
+      return reply(handleDocType(user, trimmed));
     case "WAITING_DOCUMENT":
       return reply(handleDocument(user, trimmed));
+    case "WAITING_PAYMENT_EMAIL":
+      return reply(handlePaymentEmail(user, trimmed));
     case "WAITING_PAYMENT":
       return reply(handleWaitingPayment(user, trimmed));
     default:
@@ -559,14 +568,80 @@ async function handleBankSelection(user: User, text: string): Promise<string> {
 
   const selectedBank = banks[selection - 1];
 
-  // Guardar banco seleccionado temporalmente y pedir documento
   userBanksCache.set(user.id + "_bank", [selectedBank]);
-  await updateStep(user.id, "WAITING_DOCUMENT");
+  userPaymentData.set(user.id, {});
+  await updateStep(user.id, "WAITING_PERSON_TYPE");
 
   return (
     `Banco: *${selectedBank.name}* ✅\n\n` +
-    `Necesito tus datos para el pago PSE:\n` +
-    `Escribe tu *cédula* (solo números).\n\n` +
+    `¿Eres persona natural o jurídica?\n\n` +
+    `*1.* Persona Natural\n` +
+    `*2.* Persona Jurídica\n\n` +
+    `Escribe *1* o *2*.`
+  );
+}
+
+async function handlePersonType(user: User, text: string): Promise<string> {
+  const selection = text.trim();
+
+  if (selection === "1" || selection.toLowerCase().includes("natural")) {
+    const data = userPaymentData.get(user.id) || {};
+    data.personType = "NATURAL";
+    userPaymentData.set(user.id, data);
+    await updateStep(user.id, "WAITING_DOC_TYPE");
+
+    return (
+      `Persona *Natural* ✅\n\n` +
+      `Tipo de documento:\n\n` +
+      `*1.* CC — Cédula de Ciudadanía\n` +
+      `*2.* CE — Cédula de Extranjería\n` +
+      `*3.* TI — Tarjeta de Identidad\n` +
+      `*4.* PP — Pasaporte\n\n` +
+      `Escribe el *número* de tu opción.`
+    );
+  }
+
+  if (selection === "2" || selection.toLowerCase().includes("juridica") || selection.toLowerCase().includes("jurídica")) {
+    const data = userPaymentData.get(user.id) || {};
+    data.personType = "LEGAL";
+    userPaymentData.set(user.id, data);
+    await updateStep(user.id, "WAITING_DOC_TYPE");
+
+    return (
+      `Persona *Jurídica* ✅\n\n` +
+      `Tipo de documento:\n\n` +
+      `*1.* NIT — Número de Identificación Tributaria\n` +
+      `*2.* CC — Cédula de Ciudadanía\n` +
+      `*3.* CE — Cédula de Extranjería\n\n` +
+      `Escribe el *número* de tu opción.`
+    );
+  }
+
+  return "Escribe *1* para Persona Natural o *2* para Persona Jurídica.";
+}
+
+const DOC_TYPES_NATURAL: Record<string, string> = { "1": "CC", "2": "CE", "3": "TI", "4": "PP" };
+const DOC_TYPES_LEGAL: Record<string, string> = { "1": "NIT", "2": "CC", "3": "CE" };
+
+async function handleDocType(user: User, text: string): Promise<string> {
+  const selection = text.trim();
+  const data = userPaymentData.get(user.id) || {};
+  const isLegal = data.personType === "LEGAL";
+  const docTypes = isLegal ? DOC_TYPES_LEGAL : DOC_TYPES_NATURAL;
+  const maxOption = isLegal ? 3 : 4;
+
+  const docType = docTypes[selection];
+  if (!docType) {
+    return `Escribe un número entre *1* y *${maxOption}*.`;
+  }
+
+  data.docType = docType;
+  userPaymentData.set(user.id, data);
+  await updateStep(user.id, "WAITING_DOCUMENT");
+
+  return (
+    `Documento: *${docType}* ✅\n\n` +
+    `Escribe tu *número de documento* (solo números).\n\n` +
     `Ejemplo: \`1234567890\``
   );
 }
@@ -575,31 +650,51 @@ async function handleDocument(user: User, text: string): Promise<string> {
   const docNumber = text.trim().replace(/\D/g, "");
 
   if (docNumber.length < 5 || docNumber.length > 15) {
-    return "Número de documento no válido. Escribe solo los números de tu cédula.";
+    return "Número de documento no válido. Escribe solo los números.";
   }
+
+  const data = userPaymentData.get(user.id) || {};
+  data.docNumber = docNumber;
+  userPaymentData.set(user.id, data);
+  await updateStep(user.id, "WAITING_PAYMENT_EMAIL");
+
+  return (
+    `Documento: *${data.docType} ${docNumber}* ✅\n\n` +
+    `Escribe el *correo electrónico* donde quieres recibir la confirmación del pago PSE.\n\n` +
+    `Ejemplo: \`tucorreo@gmail.com\``
+  );
+}
+
+async function handlePaymentEmail(user: User, text: string): Promise<string> {
+  const email = text.trim().toLowerCase();
+
+  if (!isValidEmail(email)) {
+    return "Ese correo no me parece válido 🤔 Prueba de nuevo, ej: juan@gmail.com";
+  }
+
+  const data = userPaymentData.get(user.id) || {};
+  data.paymentEmail = email;
+  userPaymentData.set(user.id, data);
 
   const name = user.name || "amigo";
   const bankData = userBanksCache.get(user.id + "_bank");
-  if (!bankData || bankData.length === 0) {
+  if (!bankData || bankData.length === 0 || !data.docType || !data.docNumber || !data.personType) {
     await updateStep(user.id, "DONE");
     return "Algo salió mal. Escribe *comprar* para intentar de nuevo.";
   }
 
   const selectedBank = bankData[0];
 
-  // Obtener láminas disponibles
   const availableCodes = await getAvailableStickersForUser(user.id);
   if (availableCodes.length === 0) {
     await updateStep(user.id, "DONE");
     return "Ya no hay láminas disponibles para comprar. Intenta más tarde.";
   }
 
-  // Crear la orden en la base de datos con dirección de entrega
   const deliveryAddress = userAddressCache.get(user.id);
   const order = await createOrder(user.id, availableCodes, deliveryAddress);
 
   try {
-    // Crear cobro en Tpaga
     const redirectUrl = APP_BASE_URL
       ? `${APP_BASE_URL}/payment/status?token=${order.id}`
       : "https://wa.me/573011248084";
@@ -609,15 +704,15 @@ async function handleDocument(user: User, text: string): Promise<string> {
       orderId: order.id,
       amount: order.totalAmount,
       description: `Pide Tu Mona - ${availableCodes.length} laminas`,
-      buyerEmail: user.email || "sin@email.com",
+      buyerEmail: email,
       buyerFullName: name,
-      documentType: "CC",
-      documentNumber: docNumber,
-      buyerPhone: "3000000000",
+      documentType: data.docType,
+      documentNumber: data.docNumber,
+      buyerPhone: user.whatsappPhone?.replace(/^57/, "") || "3000000000",
       redirectUrl,
+      userType: data.personType,
     });
 
-    // Actualizar orden con datos de Tpaga
     await updateOrderWithTpaga(order.id, {
       tpagaChargeToken: charge.token,
       tpagaBankUrl: charge.bankUrl,
@@ -626,13 +721,13 @@ async function handleDocument(user: User, text: string): Promise<string> {
 
     await updateStep(user.id, "WAITING_PAYMENT");
 
-    // Iniciar polling para verificar el pago automáticamente
     startChargePolling(charge.token);
 
     // Limpiar cache
     userBanksCache.delete(user.id);
     userBanksCache.delete(user.id + "_bank");
     userAddressCache.delete(user.id);
+    userPaymentData.delete(user.id);
 
     return (
       `💳 *Pago listo!*\n\n` +

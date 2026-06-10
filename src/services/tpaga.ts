@@ -99,6 +99,7 @@ export async function createCharge(params: {
   documentNumber: string;
   buyerPhone: string;
   redirectUrl: string;
+  userType?: string;
 }): Promise<{
   token: string;
   bankUrl: string;
@@ -116,7 +117,7 @@ export async function createCharge(params: {
         amount: `${params.amount}.00`,
         vat_amount: "0.00",
         description: params.description.substring(0, 80),
-        user_type: "NATURAL",
+        user_type: params.userType || "NATURAL",
         buyer_email: params.buyerEmail,
         buyer_full_name: params.buyerFullName,
         document_type: params.documentType,
