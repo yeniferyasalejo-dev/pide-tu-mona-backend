@@ -49,6 +49,13 @@ export async function saveStickers(userId: string, stickerCodes: string[]) {
   });
 }
 
+export async function removePurchasedStickers(userId: string, stickerCodes: string[]) {
+  if (stickerCodes.length === 0) return;
+  return prisma.stickerNeeded.deleteMany({
+    where: { userId, stickerCode: { in: stickerCodes } },
+  });
+}
+
 export async function resetToWaitingStickers(userId: string) {
   return prisma.user.update({
     where: { id: userId },

@@ -6,6 +6,7 @@ import {
   markOrderFailed,
   discountInventory,
   updateUserStep,
+  removePurchasedStickers,
 } from "./users";
 import { sendPurchaseConfirmation } from "./email";
 import { sendTelegramMessage } from "./telegram";
@@ -48,6 +49,9 @@ export async function processChargeResult(chargeToken: string): Promise<boolean>
     await markOrderPaid(order.id);
 
     const { discounted, outOfStock } = await discountInventory(stickerCodes);
+
+    // Borrar las láminas compradas del carrito del usuario
+    await removePurchasedStickers(order.userId, discounted);
 
     if (order.user.email) {
       await sendPurchaseConfirmation({
