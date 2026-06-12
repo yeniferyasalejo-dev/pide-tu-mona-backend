@@ -318,33 +318,41 @@ async function handleStickers(user: User, text: string): Promise<string> {
     );
   }
 
-  await saveStickers(user.id, codes);
+  // Verificar disponibilidad de las láminas pedidas
+  const { availableCodes: newAvailable, unavailableCodes: newUnavailable } = await checkInventory(codes);
+
+  // Solo guardar en carrito las que tenemos en inventario
+  if (newAvailable.length > 0) {
+    await saveStickers(user.id, newAvailable);
+  }
+
   const name = user.name || "amigo";
 
-  // Obtener TODAS las láminas acumuladas del usuario
+  // Obtener TODAS las láminas acumuladas del usuario (solo disponibles)
   const updatedUser = await prisma.user.findUnique({
     where: { id: user.id },
     include: { stickersNeeded: true },
   });
-  const allCodes = updatedUser?.stickersNeeded.map(s => s.stickerCode) || codes;
+  const allCodes = updatedUser?.stickersNeeded.map(s => s.stickerCode) || newAvailable;
 
-  const { availableCodes, unavailableCodes } = await checkInventory(allCodes);
+  let response = "";
 
-  let response = `¡Listo, *${name}*! 📝 Registré *${codes.length}* láminas nuevas.\n`;
-  response += `📋 *Total acumulado: ${allCodes.length} láminas*\n\n`;
-
-  if (availableCodes.length > 0) {
-    response += `✅ *Tenemos ${availableCodes.length}:* ${availableCodes.join(", ")}\n`;
-    const total = new Intl.NumberFormat("es-CO").format(availableCodes.length * STICKER_PRICE);
-    response += `💰 *Total: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+  if (newAvailable.length > 0) {
+    response += `¡Listo, *${name}*! 📝 Agregué *${newAvailable.length}* láminas a tu carrito.\n`;
+    response += `✅ ${newAvailable.join(", ")}\n`;
   }
 
-  if (unavailableCodes.length > 0) {
-    response += `❌ *No tenemos ${unavailableCodes.length}:* ${unavailableCodes.join(", ")}\n`;
+  if (newUnavailable.length > 0) {
+    response += `❌ *No tenemos ${newUnavailable.length}:* ${newUnavailable.join(", ")}\n`;
   }
 
-  if (availableCodes.length > 0) {
-    response += `\nEscribe *comprar* para comprar las disponibles. 🛒`;
+  if (allCodes.length > 0) {
+    response += `\n🛒 *Tu carrito: ${allCodes.length} láminas*\n`;
+    const total = new Intl.NumberFormat("es-CO").format(allCodes.length * STICKER_PRICE);
+    response += `💰 *Subtotal: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+    response += `\nEscribe *comprar* cuando estés listo. 🛒`;
+  } else if (newUnavailable.length > 0) {
+    response += `\nNinguna de esas está disponible ahora 😔 Prueba con otras.`;
   }
 
   response += `\nSi necesitas más, solo mándame la lista.`;
