@@ -116,34 +116,57 @@ function findCountryCode(name: string): string | null {
  */
 export function parseStickerCodes(text: string): string[] {
   const codes: string[] = [];
+  const upper = text.toUpperCase().trim();
+
+  // Detectar rangos: "país X a Y", "país X al Y", "país de la X a la Y", "país X-Y"
+  const rangePatterns = [
+    /(.+?)\s+(?:DE\s+(?:LA\s+)?)?(\d{1,2})\s+(?:A(?:L)?(?:\s+LA)?)\s+(\d{1,2})/gi,
+    /(.+?)\s+(\d{1,2})\s*[-–]\s*(\d{1,2})/gi,
+  ];
+
+  let hasRange = false;
+  for (const pattern of rangePatterns) {
+    let match;
+    while ((match = pattern.exec(upper)) !== null) {
+      const nameOrCode = match[1].replace(/^.*?(LAS\s+DE|LOS\s+DE|DE)\s+/i, "").trim();
+      const from = parseInt(match[2]);
+      const to = parseInt(match[3]);
+      const resolvedCode = findCountryCode(nameOrCode);
+
+      if (resolvedCode && from <= to) {
+        hasRange = true;
+        if (resolvedCode === "COCA") {
+          for (let i = Math.max(from, 1); i <= Math.min(to, 14); i++) codes.push(`C${i}`);
+        } else if (resolvedCode === "FWC") {
+          for (let i = Math.max(from, 9); i <= Math.min(to, 19); i++) codes.push(`FWC${i}`);
+        } else if (COUNTRY_CODES.includes(resolvedCode)) {
+          for (let i = Math.max(from, 1); i <= Math.min(to, 20); i++) codes.push(`${resolvedCode}${i}`);
+        }
+      }
+    }
+  }
+
+  if (hasRange) return [...new Set(codes)];
 
   // Separar por comas o saltos de línea
   const parts = text.split(/[,\n]+/).map((s) => s.trim()).filter((s) => s.length > 0);
 
   for (const part of parts) {
-    const upper = part.toUpperCase().trim();
-
-    // Formato pegado sin espacio: MEX6, COL12, C7, FWC15
-    const noSpaces = upper.replace(/\s+/g, "");
+    const partUpper = part.toUpperCase().trim();
+    const noSpaces = partUpper.replace(/\s+/g, "");
 
     // Coca-Cola: C1-C14
     const cocaMatch = noSpaces.match(/^C(\d{1,2})$/);
     if (cocaMatch) {
       const num = parseInt(cocaMatch[1]);
-      if (num >= 1 && num <= 14) {
-        codes.push(`C${num}`);
-        continue;
-      }
+      if (num >= 1 && num <= 14) { codes.push(`C${num}`); continue; }
     }
 
     // FIFA World Cup History: FWC9-FWC19
     const fwcMatch = noSpaces.match(/^FWC(\d{1,2})$/);
     if (fwcMatch) {
       const num = parseInt(fwcMatch[1]);
-      if (num >= 9 && num <= 19) {
-        codes.push(`FWC${num}`);
-        continue;
-      }
+      if (num >= 9 && num <= 19) { codes.push(`FWC${num}`); continue; }
     }
 
     // Código de país pegado: MEX6, ARG12
@@ -151,36 +174,22 @@ export function parseStickerCodes(text: string): string[] {
     if (codeMatch) {
       const country = codeMatch[1];
       const num = parseInt(codeMatch[2]);
-      if (COUNTRY_CODES.includes(country) && num >= 1 && num <= 20) {
-        codes.push(`${country}${num}`);
-        continue;
-      }
+      if (COUNTRY_CODES.includes(country) && num >= 1 && num <= 20) { codes.push(`${country}${num}`); continue; }
     }
 
-    // Formato con espacio: "Colombia 12", "Brasil 5", "Coca Cola 7", "FIFA 15"
-    const spaceMatch = upper.match(/^(.+?)\s+(\d{1,2})$/);
+    // Formato con espacio: "Colombia 12", "Brasil 5"
+    const spaceMatch = partUpper.match(/^(.+?)\s+(\d{1,2})$/);
     if (spaceMatch) {
       const nameOrCode = spaceMatch[1].trim();
       const num = parseInt(spaceMatch[2]);
-
-      // Coca-Cola con nombre
       const resolvedCode = findCountryCode(nameOrCode);
-      if (resolvedCode === "COCA" && num >= 1 && num <= 14) {
-        codes.push(`C${num}`);
-        continue;
-      }
-      if (resolvedCode === "FWC" && num >= 9 && num <= 19) {
-        codes.push(`FWC${num}`);
-        continue;
-      }
-      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num >= 1 && num <= 20) {
-        codes.push(`${resolvedCode}${num}`);
-        continue;
-      }
+
+      if (resolvedCode === "COCA" && num >= 1 && num <= 14) { codes.push(`C${num}`); continue; }
+      if (resolvedCode === "FWC" && num >= 9 && num <= 19) { codes.push(`FWC${num}`); continue; }
+      if (resolvedCode && COUNTRY_CODES.includes(resolvedCode) && num >= 1 && num <= 20) { codes.push(`${resolvedCode}${num}`); continue; }
     }
   }
 
-  // Eliminar duplicados
   return [...new Set(codes)];
 }
 

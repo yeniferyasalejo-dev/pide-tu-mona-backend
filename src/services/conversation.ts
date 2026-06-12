@@ -26,7 +26,11 @@ const APP_BASE_URL = process.env.APP_BASE_URL || "";
  */
 function isIntentPurchase(text: string): boolean {
   // Palabras cortas — solo como mensaje completo
-  const exactOnly = ["dale", "listo", "va", "vamos"];
+  const exactOnly = [
+    "dale", "listo", "va", "vamos",
+    "esa", "esas", "esos", "ese",
+    "esa por favor", "esas por favor",
+  ];
   if (exactOnly.includes(text)) return true;
 
   // Frases que pueden estar contenidas
@@ -36,6 +40,7 @@ function isIntentPurchase(text: string): boolean {
     "quiero pagar", "vamos a pagar", "le doy", "hagale",
     "hágale", "quiero las laminas", "quiero las láminas",
     "si compro", "sí compro", "las quiero",
+    "esa por favor", "esas por favor", "quiero esa", "quiero esas",
   ];
   return phrases.some(kw => text.includes(kw));
 }

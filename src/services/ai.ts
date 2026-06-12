@@ -89,6 +89,12 @@ IMPORTANTE — USA EL CONTEXTO DE LA CONVERSACIÓN:
 - Ejemplo: si antes dijo "México 1 al 5" y ahora dice "y la 8" → MEX8
 - Si no hay contexto previo de país, pide aclaración.
 
+RANGOS — Cuando el usuario dice "de la X a la Y" o "X al Y", genera TODOS los números del rango:
+- "estados unidos de la 5 a 20" → USA5,USA6,USA7,...,USA20 (16 láminas)
+- "colombia 1 al 10" → COL1,COL2,...,COL10
+- "brasil de la 3 a la 8" → BRA3,BRA4,BRA5,BRA6,BRA7,BRA8
+- "mexico 10-15" → MEX10,MEX11,MEX12,MEX13,MEX14,MEX15
+
 Ejemplos de interpretación:
 - "todas las de cocacola" → C1,C2,...,C14
 - "todas las de colombia" → COL1,COL2,...,COL20
