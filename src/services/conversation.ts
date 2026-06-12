@@ -347,9 +347,14 @@ async function handleStickers(user: User, text: string): Promise<string> {
   }
 
   if (allCodes.length > 0) {
-    response += `\n🛒 *Tu carrito: ${allCodes.length} láminas*\n`;
-    const total = new Intl.NumberFormat("es-CO").format(allCodes.length * STICKER_PRICE);
-    response += `💰 *Subtotal: $${total} COP* ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+    const subtotal = allCodes.length * STICKER_PRICE;
+    const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+    response += `\n🛒 *Tu carrito: ${allCodes.length} láminas*\n\n`;
+    response += `💰 *Desglose:*\n`;
+    response += `• Láminas: $${new Intl.NumberFormat("es-CO").format(subtotal)} COP ($${STICKER_PRICE_FORMATTED} c/u)\n`;
+    response += `• Envío: $${DELIVERY_FEE_FORMATTED} COP\n`;
+    response += `• Comisión PSE: $${PSE_FEE_FORMATTED} COP\n`;
+    response += `• *Total a pagar: $${new Intl.NumberFormat("es-CO").format(grandTotal)} COP*\n`;
     response += `\nEscribe *comprar* cuando estés listo. 🛒`;
   } else if (newUnavailable.length > 0) {
     response += `\nNinguna de esas está disponible ahora 😔 Prueba con otras.`;
