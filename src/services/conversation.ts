@@ -569,6 +569,25 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
     return "Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍";
   }
 
+  // Si no es si/cancelar, verificar si está pidiendo más láminas
+  const codes = parseStickerCodes(text);
+  if (codes.length > 0) {
+    // Agregar al carrito y volver a mostrar resumen de compra
+    const result = await handleStickers(user, text);
+    await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
+    return result + `\n\n¿Listo para pagar?\n• Escribe *si* para continuar al pago\n• Escribe *cancelar* para cancelar`;
+  }
+
+  // Intentar con AI
+  try {
+    const aiResult = await interpretMessage(text, user.name || "amigo", "DONE", user.id);
+    if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
+      const result = await handleStickers(user, text);
+      await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
+      return result + `\n\n¿Listo para pagar?\n• Escribe *si* para continuar al pago\n• Escribe *cancelar* para cancelar`;
+    }
+  } catch { /* ignorar */ }
+
   return "Escribe *si* para continuar con la compra o *cancelar* para cancelar.";
 }
 
