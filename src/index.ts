@@ -4,6 +4,8 @@ dotenv.config();
 import express from "express";
 import webhookRouter from "./routes/webhook";
 import adminRouter from "./routes/admin";
+import tpagaWebhookRouter from "./routes/tpaga-webhook";
+import whatsappWebhookRouter from "./routes/whatsapp-webhook";
 import { setWebhook } from "./services/telegram";
 
 const app = express();
@@ -14,6 +16,8 @@ app.use(express.json());
 // Rutas
 app.use(webhookRouter);
 app.use(adminRouter);
+app.use(tpagaWebhookRouter);
+app.use(whatsappWebhookRouter);
 
 // Health check
 app.get("/health", (_req, res) => {

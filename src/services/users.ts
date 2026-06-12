@@ -1,6 +1,13 @@
 import prisma from "../lib/prisma";
 import { STICKER_PRICE, DELIVERY_FEE, PSE_FEE } from "../utils/validators";
 
+export class OrderAlreadySettledError extends Error {
+  constructor(orderId: string) {
+    super(`Orden ${orderId} ya fue procesada por otro proceso`);
+    this.name = "OrderAlreadySettledError";
+  }
+}
+
 export async function findOrCreateUser(chatId: string, channel: "telegram" | "whatsapp" = "telegram") {
   if (channel === "whatsapp") {
     return prisma.user.upsert({
@@ -155,6 +162,16 @@ export async function updateOrderWithTpaga(
 }
 
 /**
+ * Busca una orden por ID
+ */
+export async function findOrderById(orderId: string) {
+  return prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true, user: true },
+  });
+}
+
+/**
  * Busca una orden por token de Tpaga
  */
 export async function findOrderByTpagaToken(chargeToken: string) {
@@ -165,23 +182,27 @@ export async function findOrderByTpagaToken(chargeToken: string) {
 }
 
 /**
- * Marca una orden como pagada
+ * Marca una orden como pagada (solo si aún está pendiente o en procesamiento).
+ * Retorna true si esta invocación fue la que actualizó el estado.
  */
-export async function markOrderPaid(orderId: string) {
-  return prisma.order.update({
-    where: { id: orderId },
+export async function markOrderPaid(orderId: string): Promise<boolean> {
+  const result = await prisma.order.updateMany({
+    where: { id: orderId, status: { in: ["PENDING", "PROCESSING"] } },
     data: { status: "PAID" },
   });
+  return result.count > 0;
 }
 
 /**
- * Marca una orden como fallida
+ * Marca una orden como fallida (solo si aún está pendiente o en procesamiento).
+ * Retorna true si esta invocación fue la que actualizó el estado.
  */
-export async function markOrderFailed(orderId: string) {
-  return prisma.order.update({
-    where: { id: orderId },
+export async function markOrderFailed(orderId: string): Promise<boolean> {
+  const result = await prisma.order.updateMany({
+    where: { id: orderId, status: { in: ["PENDING", "PROCESSING"] } },
     data: { status: "FAILED" },
   });
+  return result.count > 0;
 }
 
 /**
@@ -210,6 +231,60 @@ export async function discountInventory(stickerCodes: string[]): Promise<{
   });
 
   return { discounted, outOfStock };
+}
+
+/**
+ * Confirma el pago de una orden de forma atómica:
+ * descuenta inventario, limpia el carrito y marca la orden como PAID en una sola transacción.
+ */
+export async function settleOrderPayment(
+  orderId: string,
+  userId: string,
+  stickerCodes: string[]
+): Promise<{ settled: boolean; discounted: string[]; outOfStock: string[] }> {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { status: true },
+    });
+
+    if (!order || order.status === "PAID" || order.status === "FAILED") {
+      return { settled: false, discounted: [], outOfStock: [] };
+    }
+
+    const discounted: string[] = [];
+    const outOfStock: string[] = [];
+
+    for (const code of stickerCodes) {
+      const result = await tx.inventory.updateMany({
+        where: { stickerCode: code, quantity: { gt: 0 } },
+        data: { quantity: { decrement: 1 } },
+      });
+
+      if (result.count > 0) {
+        discounted.push(code);
+      } else {
+        outOfStock.push(code);
+      }
+    }
+
+    if (discounted.length > 0) {
+      await tx.stickerNeeded.deleteMany({
+        where: { userId, stickerCode: { in: discounted } },
+      });
+    }
+
+    const paid = await tx.order.updateMany({
+      where: { id: orderId, status: { in: ["PENDING", "PROCESSING"] } },
+      data: { status: "PAID" },
+    });
+
+    if (paid.count === 0) {
+      throw new OrderAlreadySettledError(orderId);
+    }
+
+    return { settled: true, discounted, outOfStock };
+  });
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 } from "./users";
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
 import { interpretMessage, addToHistory, clearHistory } from "./ai";
-import { isTpagaEnabled, getBanks, createCharge } from "./tpaga";
+import { isTpagaEnabled, getBanks, createCharge, normalizeColombianPhone } from "./tpaga";
 import { startChargePolling } from "./payment-processor";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
@@ -732,9 +732,12 @@ async function handlePaymentEmail(user: User, text: string): Promise<string> {
   const order = await createOrder(user.id, availableCodes, deliveryAddress);
 
   try {
-    const redirectUrl = APP_BASE_URL
-      ? `${APP_BASE_URL}/payment/status?token=${order.id}`
-      : "https://wa.me/573011248084";
+    if (!APP_BASE_URL) {
+      throw new Error("APP_BASE_URL no está configurada");
+    }
+
+    const redirectUrl = `${APP_BASE_URL}/payment/status?orderId=${encodeURIComponent(order.id)}`;
+    const buyerPhone = normalizeColombianPhone(user.whatsappPhone);
 
     const charge = await createCharge({
       bankCode: selectedBank.code,
@@ -745,7 +748,7 @@ async function handlePaymentEmail(user: User, text: string): Promise<string> {
       buyerFullName: name,
       documentType: data.docType,
       documentNumber: data.docNumber,
-      buyerPhone: user.whatsappPhone?.replace(/^57/, "") || "3000000000",
+      buyerPhone,
       redirectUrl,
       userType: data.personType,
     });

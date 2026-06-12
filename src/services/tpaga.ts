@@ -20,6 +20,25 @@ export function isTpagaEnabled(): boolean {
 }
 
 /**
+ * Normaliza un teléfono colombiano para enviarlo a Tpaga (solo dígitos, 10 chars, empieza por 3).
+ */
+export function normalizeColombianPhone(value?: string | null): string {
+  let digits = (value ?? "").replace(/\D/g, "");
+
+  if (digits.startsWith("57") && digits.length === 12) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.length !== 10 || !digits.startsWith("3")) {
+    throw new Error(
+      "El número de teléfono de WhatsApp no es válido para PSE. Debe ser un celular colombiano de 10 dígitos que comience por 3."
+    );
+  }
+
+  return digits;
+}
+
+/**
  * Obtiene un token JWT de Tpaga usando OAuth2 client credentials
  */
 async function getAccessToken(): Promise<string> {
@@ -143,7 +162,12 @@ export async function createCharge(params: {
     };
   } catch (error: unknown) {
     if (axios.isAxiosError(error)) {
-      console.error("[Tpaga] Error creando cobro:", error.response?.data || error.message);
+      console.error("[Tpaga] Error creando cobro:", {
+        operation: "createCharge",
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      });
     } else {
       console.error("[Tpaga] Error creando cobro:", error);
     }
@@ -176,8 +200,16 @@ export async function getChargeStatus(chargeToken: string): Promise<{
       rejectedReason: res.data.rejected_reason,
     };
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error("[Tpaga] Error consultando cobro:", msg);
+    if (axios.isAxiosError(error)) {
+      console.error("[Tpaga] Error consultando cobro:", {
+        operation: "getChargeStatus",
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      });
+    } else {
+      console.error("[Tpaga] Error consultando cobro:", error);
+    }
     throw new Error("No se pudo consultar el estado del cobro");
   }
 }

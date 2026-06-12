@@ -1,12 +1,10 @@
-import { STICKER_PRICE } from "../utils/validators";
 import { getChargeStatus } from "./tpaga";
 import {
   findOrderByTpagaToken,
-  markOrderPaid,
   markOrderFailed,
-  discountInventory,
+  settleOrderPayment,
   updateUserStep,
-  removePurchasedStickers,
+  OrderAlreadySettledError,
 } from "./users";
 import { sendPurchaseConfirmation } from "./email";
 import { sendTelegramMessage } from "./telegram";
@@ -28,76 +26,137 @@ async function sendMessageToUser(
  * Usado tanto por el webhook como por el polling.
  * Retorna true si el cobro fue procesado (aprobado o rechazado).
  */
+const activeProcessing = new Set<string>();
+
 export async function processChargeResult(chargeToken: string): Promise<boolean> {
-  const order = await findOrderByTpagaToken(chargeToken);
-  if (!order) {
-    console.error(`[Payment] Orden no encontrada para token: ${chargeToken}`);
+  if (activeProcessing.has(chargeToken)) {
+    console.log(`[Payment] Cobro ${chargeToken} ya se está procesando`);
     return false;
   }
 
-  if (order.status === "PAID" || order.status === "FAILED") {
-    return true;
+  activeProcessing.add(chargeToken);
+  try {
+    const order = await findOrderByTpagaToken(chargeToken);
+    if (!order) {
+      console.error(`[Payment] Orden no encontrada para token: ${chargeToken}`);
+      return false;
+    }
+
+    if (order.status === "PAID" || order.status === "FAILED") {
+      return true;
+    }
+
+    const chargeStatus = await getChargeStatus(chargeToken);
+    console.log(`[Payment] Estado del cobro ${chargeToken}: ${chargeStatus.status}`);
+
+    const stickerCodes = order.items.map((item) => item.stickerCode);
+    const name = order.user.name || "amigo";
+
+    if (chargeStatus.status === "settled") {
+      const freshOrder = await findOrderByTpagaToken(chargeToken);
+      if (!freshOrder || freshOrder.status === "PAID" || freshOrder.status === "FAILED") {
+        return true;
+      }
+
+      let discounted: string[] = [];
+      let outOfStock: string[] = [];
+
+      try {
+        const settlement = await settleOrderPayment(
+          order.id,
+          order.userId,
+          stickerCodes
+        );
+
+        if (!settlement.settled) {
+          console.log(
+            `[Payment] Orden ${order.id} ya fue procesada por otro proceso`
+          );
+          return true;
+        }
+
+        discounted = settlement.discounted;
+        outOfStock = settlement.outOfStock;
+      } catch (error) {
+        if (error instanceof OrderAlreadySettledError) {
+          console.log(`[Payment] ${error.message}`);
+          return true;
+        }
+
+        console.error(
+          `[Payment] Error confirmando orden ${order.id} atómicamente:`,
+          error
+        );
+        return false;
+      }
+
+      if (order.user.email) {
+        await sendPurchaseConfirmation({
+          to: order.user.email,
+          buyerName: name,
+          orderId: order.id,
+          stickers: discounted,
+          totalAmount: order.totalAmount,
+          deliveryAddress: order.deliveryAddress || undefined,
+        });
+      }
+
+      let msg = `*${name}*, tu pago fue confirmado! ✅🎉\n\n`;
+      msg += `Compraste *${discounted.length}* láminas:\n`;
+      msg += discounted.join(", ") + "\n\n";
+      msg += `Total pagado: *$${new Intl.NumberFormat("es-CO").format(order.totalAmount)} COP*\n\n`;
+
+      if (outOfStock.length > 0) {
+        msg += `⚠️ ${outOfStock.length} láminas ya no estaban disponibles: ${outOfStock.join(", ")}\n`;
+      }
+
+      msg +=
+        "Te enviamos la confirmación a tu correo. Te contactaremos para la entrega. 📦";
+
+      await sendMessageToUser(order.user, msg);
+      await updateUserStep(order.userId, "DONE");
+
+      return true;
+    } else if (
+      chargeStatus.status === "authorized" ||
+      chargeStatus.status === "pending"
+    ) {
+      console.log(
+        `[Payment] Cobro ${chargeToken} todavía está en ${chargeStatus.status}`
+      );
+
+      return false;
+    } else if (
+      chargeStatus.status === "charge-rejected" ||
+      chargeStatus.status === "rejected" ||
+      chargeStatus.status === "failed"
+    ) {
+      const markedFailed = await markOrderFailed(order.id);
+      if (!markedFailed) {
+        console.log(
+          `[Payment] Orden ${order.id} ya fue procesada por otro proceso`
+        );
+        return true;
+      }
+
+      let msg = `*${name}*, tu pago no se pudo completar 😔\n\n`;
+
+      if (chargeStatus.rejectedReason) {
+        msg += `Razón: ${chargeStatus.rejectedReason}\n\n`;
+      }
+
+      msg += "Puedes intentar de nuevo escribiendo *comprar*.";
+
+      await sendMessageToUser(order.user, msg);
+      await updateUserStep(order.userId, "DONE");
+
+      return true;
+    }
+
+    return false;
+  } finally {
+    activeProcessing.delete(chargeToken);
   }
-
-  const chargeStatus = await getChargeStatus(chargeToken);
-  console.log(`[Payment] Estado del cobro ${chargeToken}: ${chargeStatus.status}`);
-
-  const stickerCodes = order.items.map((item) => item.stickerCode);
-  const name = order.user.name || "amigo";
-
-  if (chargeStatus.status === "settled" || chargeStatus.status === "authorized") {
-    await markOrderPaid(order.id);
-
-    const { discounted, outOfStock } = await discountInventory(stickerCodes);
-
-    // Borrar las láminas compradas del carrito del usuario
-    await removePurchasedStickers(order.userId, discounted);
-
-    if (order.user.email) {
-      await sendPurchaseConfirmation({
-        to: order.user.email,
-        buyerName: name,
-        orderId: order.id,
-        stickers: discounted,
-        totalAmount: order.totalAmount,
-        deliveryAddress: order.deliveryAddress || undefined,
-      });
-    }
-
-    let msg = `*${name}*, tu pago fue confirmado! ✅🎉\n\n`;
-    msg += `Compraste *${discounted.length}* láminas:\n`;
-    msg += discounted.join(", ") + "\n\n";
-    msg += `Total pagado: *$${new Intl.NumberFormat("es-CO").format(order.totalAmount)} COP*\n\n`;
-
-    if (outOfStock.length > 0) {
-      msg += `⚠️ ${outOfStock.length} láminas ya no estaban disponibles: ${outOfStock.join(", ")}\n`;
-    }
-
-    msg += `Te enviamos la confirmación a tu correo. Te contactaremos para la entrega. 📦`;
-
-    await sendMessageToUser(order.user, msg);
-    await updateUserStep(order.userId, "DONE");
-    return true;
-
-  } else if (
-    chargeStatus.status === "charge-rejected" ||
-    chargeStatus.status === "rejected" ||
-    chargeStatus.status === "failed"
-  ) {
-    await markOrderFailed(order.id);
-
-    let msg = `*${name}*, tu pago no se pudo completar 😔\n\n`;
-    if (chargeStatus.rejectedReason) {
-      msg += `Razón: ${chargeStatus.rejectedReason}\n\n`;
-    }
-    msg += `Puedes intentar de nuevo escribiendo *comprar*.`;
-
-    await sendMessageToUser(order.user, msg);
-    await updateUserStep(order.userId, "DONE");
-    return true;
-  }
-
-  return false;
 }
 
 // ==================== POLLING ====================
