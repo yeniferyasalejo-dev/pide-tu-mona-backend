@@ -1,31 +1,46 @@
-import nodemailer from "nodemailer";
+import { google } from "googleapis";
 import { STICKER_PRICE_FORMATTED } from "../utils/validators";
 
+const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || "";
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || "";
+const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || "";
 const EMAIL_USER = process.env.EMAIL_USER || "";
-const EMAIL_APP_PASSWORD = process.env.EMAIL_APP_PASSWORD || "";
 const SELLER_EMAIL = process.env.SELLER_EMAIL || "vendsysselweb@gmail.com";
 
-function getTransporter() {
-  if (!EMAIL_USER || !EMAIL_APP_PASSWORD) {
-    console.log("[Email] No configurado (falta EMAIL_USER o EMAIL_APP_PASSWORD)");
+function getGmailClient() {
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !EMAIL_USER) {
+    console.log("[Email] No configurado (faltan credenciales Gmail API)");
     return null;
   }
 
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_APP_PASSWORD,
-    },
-    family: 4,
-  } as nodemailer.TransportOptions);
+  const oauth2Client = new google.auth.OAuth2(
+    GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET
+  );
+  oauth2Client.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
+
+  return google.gmail({ version: "v1", auth: oauth2Client });
 }
 
-/**
- * Envía email de confirmación de compra
- */
+async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+  const gmail = getGmailClient();
+  if (!gmail) throw new Error("Gmail API no configurado");
+
+  const raw = Buffer.from(
+    `From: "Pide Tu Mona" <${EMAIL_USER}>\r\n` +
+    `To: ${to}\r\n` +
+    `Subject: ${subject}\r\n` +
+    `MIME-Version: 1.0\r\n` +
+    `Content-Type: text/html; charset=utf-8\r\n\r\n` +
+    html
+  ).toString("base64url");
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw },
+  });
+}
+
 export async function sendPurchaseConfirmation(params: {
   to: string;
   buyerName: string;
@@ -34,8 +49,8 @@ export async function sendPurchaseConfirmation(params: {
   totalAmount: number;
   deliveryAddress?: string;
 }): Promise<boolean> {
-  const transporter = getTransporter();
-  if (!transporter) {
+  const gmail = getGmailClient();
+  if (!gmail) {
     console.log("[Email] No se puede enviar — email no configurado");
     return false;
   }
@@ -98,16 +113,13 @@ export async function sendPurchaseConfirmation(params: {
   `;
 
   try {
-    // Email al cliente
-    await transporter.sendMail({
-      from: `"Pide Tu Mona" <${EMAIL_USER}>`,
-      to: params.to,
-      subject: `Confirmacion de compra #${params.orderId.substring(0, 8)} - Pide Tu Mona`,
-      html,
-    });
+    await sendEmail(
+      params.to,
+      `Confirmacion de compra #${params.orderId.substring(0, 8)} - Pide Tu Mona`,
+      html
+    );
     console.log(`[Email] Confirmacion enviada a ${params.to}`);
 
-    // Notificación a la vendedora
     try {
       await sendSellerNotification(params);
     } catch (e) {
@@ -122,9 +134,6 @@ export async function sendPurchaseConfirmation(params: {
   }
 }
 
-/**
- * Notifica a la vendedora de una nueva venta
- */
 async function sendSellerNotification(params: {
   to: string;
   buyerName: string;
@@ -133,9 +142,6 @@ async function sendSellerNotification(params: {
   totalAmount: number;
   deliveryAddress?: string;
 }): Promise<void> {
-  const transporter = getTransporter();
-  if (!transporter) return;
-
   const totalFormatted = new Intl.NumberFormat("es-CO").format(params.totalAmount);
 
   const html = `
@@ -161,11 +167,10 @@ async function sendSellerNotification(params: {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"Pide Tu Mona" <${EMAIL_USER}>`,
-    to: SELLER_EMAIL,
-    subject: `💰 Nueva venta #${params.orderId.substring(0, 8)} - ${params.buyerName} - $${totalFormatted}`,
-    html,
-  });
+  await sendEmail(
+    SELLER_EMAIL,
+    `💰 Nueva venta #${params.orderId.substring(0, 8)} - ${params.buyerName} - $${totalFormatted}`,
+    html
+  );
   console.log(`[Email] Notificacion de venta enviada a ${SELLER_EMAIL}`);
 }
