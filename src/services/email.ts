@@ -5,7 +5,7 @@ const GMAIL_CLIENT_ID = process.env.GMAIL_CLIENT_ID || "";
 const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || "";
 const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || "";
 const EMAIL_USER = process.env.EMAIL_USER || "";
-const SELLER_EMAIL = process.env.SELLER_EMAIL || "vendsysselweb@gmail.com";
+const SELLER_EMAILS = (process.env.SELLER_EMAIL || "vendsysselweb@gmail.com").split(",").map(e => e.trim());
 
 function getGmailClient() {
   console.log(`[Email] Credenciales: CLIENT_ID=${GMAIL_CLIENT_ID ? "OK" : "VACÍO"}, SECRET=${GMAIL_CLIENT_SECRET ? "OK" : "VACÍO"}, REFRESH=${GMAIL_REFRESH_TOKEN ? "OK" : "VACÍO"}, USER=${EMAIL_USER || "VACÍO"}`);
@@ -168,10 +168,9 @@ async function sendSellerNotification(params: {
     </div>
   `;
 
-  await sendEmail(
-    SELLER_EMAIL,
-    `💰 Nueva venta #${params.orderId.substring(0, 8)} - ${params.buyerName} - $${totalFormatted}`,
-    html
-  );
-  console.log(`[Email] Notificacion de venta enviada a ${SELLER_EMAIL}`);
+  const subject = `💰 Nueva venta #${params.orderId.substring(0, 8)} - ${params.buyerName} - $${totalFormatted}`;
+  for (const email of SELLER_EMAILS) {
+    await sendEmail(email, subject, html);
+  }
+  console.log(`[Email] Notificacion de venta enviada a ${SELLER_EMAILS.join(", ")}`);
 }
