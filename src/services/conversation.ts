@@ -10,6 +10,8 @@ import {
   findPendingOrder,
   markOrderFailed,
   updateUserStep,
+  discountInventory,
+  removePurchasedStickers,
 } from "./users";
 import { sendPurchaseConfirmation } from "./email";
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
@@ -546,6 +548,12 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
 
     const deliveryAddress = userAddressCache.get(user.id);
     const order = await createOrder(user.id, availableCodes, deliveryAddress);
+
+    const { discounted, outOfStock } = await discountInventory(availableCodes);
+    if (discounted.length > 0) {
+      await removePurchasedStickers(user.id, discounted);
+    }
+    console.log(`[Conversation] Inventario descontado: ${discounted.length} OK, ${outOfStock.length} sin stock`);
 
     console.log(`[Conversation] Email del usuario: "${user.email}", nombre: "${name}", orden: ${order.id}`);
     if (user.email) {
