@@ -124,7 +124,7 @@ export async function getAvailableStickersForUser(userId: string) {
  * Crea una orden de compra
  */
 export async function createOrder(userId: string, stickerCodes: string[], deliveryAddress?: string) {
-  const totalAmount = stickerCodes.length * STICKER_PRICE + DELIVERY_FEE + PSE_FEE;
+  const totalAmount = stickerCodes.length * STICKER_PRICE + DELIVERY_FEE;
 
   return prisma.order.create({
     data: {
