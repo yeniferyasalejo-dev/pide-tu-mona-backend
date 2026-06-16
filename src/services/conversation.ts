@@ -512,7 +512,12 @@ async function handleAddress(user: User, text: string): Promise<string> {
     return "Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍";
   }
 
-  // Validar que tenga al menos algo razonable (mínimo 10 caracteres)
+  const notAddressPatterns = /^(comprar|quiero|necesito|otra|otras|cambiar|agregar|nueva|ver|lista|lamina|lámina)/i;
+  if (notAddressPatterns.test(lower)) {
+    await updateStep(user.id, "DONE");
+    return "Entendido, volvemos al inicio. Mándame las láminas que necesitas. 👍";
+  }
+
   if (text.length < 10) {
     return (
       "La dirección parece muy corta 🤔\n\n" +
