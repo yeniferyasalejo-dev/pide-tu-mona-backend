@@ -11,6 +11,7 @@ import {
   markOrderFailed,
   updateUserStep,
 } from "./users";
+import { sendPurchaseConfirmation } from "./email";
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
 import { interpretMessage, addToHistory, clearHistory } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge, normalizeColombianPhone } from "./tpaga";
@@ -348,12 +349,11 @@ async function handleStickers(user: User, text: string): Promise<string> {
 
   if (allCodes.length > 0) {
     const subtotal = allCodes.length * STICKER_PRICE;
-    const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+    const grandTotal = subtotal + DELIVERY_FEE;
     response += `\n🛒 *Tu carrito: ${allCodes.length} láminas*\n\n`;
     response += `💰 *Desglose:*\n`;
     response += `• Láminas: $${new Intl.NumberFormat("es-CO").format(subtotal)} COP ($${STICKER_PRICE_FORMATTED} c/u)\n`;
     response += `• Envío: $${DELIVERY_FEE_FORMATTED} COP\n`;
-    response += `• Comisión PSE: $${PSE_FEE_FORMATTED} COP\n`;
     response += `• *Total a pagar: $${new Intl.NumberFormat("es-CO").format(grandTotal)} COP*\n`;
     response += `\nEscribe *comprar* cuando estés listo. 🛒`;
   } else if (newUnavailable.length > 0) {
@@ -436,10 +436,9 @@ async function handleCart(user: User): Promise<string> {
   if (availableCodes.length > 0) {
     response += `✅ *Disponibles (${availableCodes.length}):* ${availableCodes.join(", ")}\n`;
     const subtotal = availableCodes.length * STICKER_PRICE;
-    const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+    const grandTotal = subtotal + DELIVERY_FEE;
     response += `💰 Láminas: $${new Intl.NumberFormat("es-CO").format(subtotal)} COP ($${STICKER_PRICE_FORMATTED} c/u)\n`;
     response += `📦 Envío: $${DELIVERY_FEE_FORMATTED} COP\n`;
-    response += `🏦 PSE: $${PSE_FEE_FORMATTED} COP\n`;
     response += `🧾 *Total: $${new Intl.NumberFormat("es-CO").format(grandTotal)} COP*\n`;
   }
 
@@ -461,13 +460,6 @@ async function handleCart(user: User): Promise<string> {
 async function startPurchaseFlow(user: User): Promise<string> {
   const name = user.name || "amigo";
 
-  if (!isTpagaEnabled()) {
-    return (
-      `*${name}*, los pagos en línea estarán disponibles muy pronto! 🚧\n\n` +
-      `Por ahora, contáctanos por WhatsApp para coordinar tu compra.`
-    );
-  }
-
   // Obtener láminas disponibles del usuario
   const availableCodes = await getAvailableStickersForUser(user.id);
 
@@ -479,7 +471,7 @@ async function startPurchaseFlow(user: User): Promise<string> {
   }
 
   const subtotal = availableCodes.length * STICKER_PRICE;
-  const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+  const grandTotal = subtotal + DELIVERY_FEE;
   const subtotalFormatted = new Intl.NumberFormat("es-CO").format(subtotal);
   const grandTotalFormatted = new Intl.NumberFormat("es-CO").format(grandTotal);
 
@@ -492,8 +484,8 @@ async function startPurchaseFlow(user: User): Promise<string> {
     `💰 *Desglose:*\n` +
     `• Láminas: $${subtotalFormatted} COP ($${STICKER_PRICE_FORMATTED} c/u)\n` +
     `• Envío: $${DELIVERY_FEE_FORMATTED} COP\n` +
-    `• Comisión PSE: $${PSE_FEE_FORMATTED} COP\n` +
     `• *Total a pagar: $${grandTotalFormatted} COP*\n\n` +
+    `💵 *Pago contra entrega* — pagas cuando recibas tus láminas.\n\n` +
     `📦 Para la entrega, envíame tus datos en un solo mensaje:\n\n` +
     `Ciudad:\n` +
     `Barrio:\n` +
@@ -535,7 +527,7 @@ async function handleAddress(user: User, text: string): Promise<string> {
     `📦 *Dirección registrada* ✅\n\n` +
     `${text}\n\n` +
     `¿Todo correcto?\n` +
-    `• Escribe *si* para continuar al pago\n` +
+    `• Escribe *si* para confirmar el pedido\n` +
     `• Escribe *cancelar* para cancelar`
   );
 }
@@ -544,24 +536,43 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
   const lower = text.toLowerCase().trim();
 
   if (isIntentYes(lower)) {
-    // Obtener bancos y mostrar lista
-    try {
-      const banks = await getBanks();
-      userBanksCache.set(user.id, banks);
+    const name = user.name || "amigo";
+    const availableCodes = await getAvailableStickersForUser(user.id);
 
-      let msg = `🏦 *Selecciona tu banco:*\n\n`;
-      banks.forEach((bank, index) => {
-        msg += `*${index + 1}.* ${bank.name}\n`;
-      });
-      msg += `\nEscribe el *número* de tu banco.`;
-
-      await updateStep(user.id, "WAITING_BANK_SELECTION");
-      return msg;
-    } catch (error) {
-      console.error("[Conversation] Error obteniendo bancos:", error);
+    if (availableCodes.length === 0) {
       await updateStep(user.id, "DONE");
-      return "Hubo un error cargando los bancos. Intenta de nuevo escribiendo *comprar*.";
+      return "Ya no hay láminas disponibles para comprar. Intenta más tarde.";
     }
+
+    const deliveryAddress = userAddressCache.get(user.id);
+    const order = await createOrder(user.id, availableCodes, deliveryAddress);
+
+    if (user.email) {
+      try {
+        await sendPurchaseConfirmation({
+          to: user.email,
+          buyerName: name,
+          orderId: order.id,
+          stickers: availableCodes,
+          totalAmount: order.totalAmount,
+          deliveryAddress: deliveryAddress || undefined,
+        });
+      } catch (e) {
+        console.error("[Conversation] Error enviando email de reserva:", e);
+      }
+    }
+
+    let msg = `✅ *Láminas reservadas, ${name}!*\n\n`;
+    msg += `📋 *${availableCodes.length}* láminas:\n`;
+    msg += availableCodes.join(", ") + "\n\n";
+    msg += `💵 *Total: $${new Intl.NumberFormat("es-CO").format(order.totalAmount)} COP*\n`;
+    msg += `💵 *Pago contra entrega*\n\n`;
+    msg += `📦 *Dirección:*\n${deliveryAddress || "No especificada"}\n\n`;
+    msg += `Te contactaremos para coordinar la entrega. 🏍️`;
+
+    userAddressCache.delete(user.id);
+    await updateStep(user.id, "DONE");
+    return msg;
   }
 
   if (isIntentCancel(lower)) {
@@ -572,10 +583,9 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
   // Si no es si/cancelar, verificar si está pidiendo más láminas
   const codes = parseStickerCodes(text);
   if (codes.length > 0) {
-    // Agregar al carrito y volver a mostrar resumen de compra
     const result = await handleStickers(user, text);
     await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
-    return result + `\n\n¿Listo para pagar?\n• Escribe *si* para continuar al pago\n• Escribe *cancelar* para cancelar`;
+    return result + `\n\n¿Confirmas el pedido?\n• Escribe *si* para confirmar\n• Escribe *cancelar* para cancelar`;
   }
 
   // Intentar con AI
@@ -584,11 +594,11 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
     if (aiResult.type === "stickers" && aiResult.codes.length > 0) {
       const result = await handleStickers(user, text);
       await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
-      return result + `\n\n¿Listo para pagar?\n• Escribe *si* para continuar al pago\n• Escribe *cancelar* para cancelar`;
+      return result + `\n\n¿Confirmas el pedido?\n• Escribe *si* para confirmar\n• Escribe *cancelar* para cancelar`;
     }
   } catch { /* ignorar */ }
 
-  return "Escribe *si* para continuar con la compra o *cancelar* para cancelar.";
+  return "Escribe *si* para confirmar el pedido o *cancelar* para cancelar.";
 }
 
 async function handleBankSelection(user: User, text: string): Promise<string> {
