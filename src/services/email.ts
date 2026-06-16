@@ -49,6 +49,7 @@ export async function sendPurchaseConfirmation(params: {
   stickers: string[];
   totalAmount: number;
   deliveryAddress?: string;
+  whatsappPhone?: string;
 }): Promise<boolean> {
   const gmail = getGmailClient();
   if (!gmail) {
@@ -142,6 +143,7 @@ async function sendSellerNotification(params: {
   stickers: string[];
   totalAmount: number;
   deliveryAddress?: string;
+  whatsappPhone?: string;
 }): Promise<void> {
   const totalFormatted = new Intl.NumberFormat("es-CO").format(params.totalAmount);
 
@@ -153,6 +155,7 @@ async function sendSellerNotification(params: {
       <div style="padding:20px;">
         <p><strong>Comprador:</strong> ${params.buyerName}</p>
         <p><strong>Email:</strong> ${params.to}</p>
+        ${params.whatsappPhone ? `<p><strong>WhatsApp:</strong> <a href="https://wa.me/${params.whatsappPhone}">${params.whatsappPhone}</a></p>` : ''}
         <p><strong>Orden:</strong> #${params.orderId.substring(0, 8)}</p>
         <p><strong>Laminas (${params.stickers.length}):</strong> ${params.stickers.join(", ")}</p>
         <p><strong>Total:</strong> $${totalFormatted} COP</p>

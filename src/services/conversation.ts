@@ -570,6 +570,7 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
         stickers: availableCodes,
         totalAmount: order.totalAmount,
         deliveryAddress: deliveryAddress || undefined,
+        whatsappPhone: user.whatsappPhone || undefined,
       })
         .then(ok => console.log(`[Conversation] Email resultado: ${ok}`))
         .catch(e => console.error("[Conversation] Error enviando email:", e));
