@@ -18,7 +18,7 @@ function getTransporter() {
       pass: EMAIL_APP_PASSWORD,
     },
     family: 4,
-  });
+  } as nodemailer.TransportOptions);
 }
 
 /**
