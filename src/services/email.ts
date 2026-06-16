@@ -12,13 +12,15 @@ function getTransporter() {
   }
 
   return nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
     auth: {
       user: EMAIL_USER,
       pass: EMAIL_APP_PASSWORD,
     },
     family: 4,
-  } as nodemailer.TransportOptions);
+  });
 }
 
 /**
