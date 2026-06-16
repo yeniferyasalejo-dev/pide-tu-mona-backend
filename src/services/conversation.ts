@@ -547,7 +547,9 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
     const deliveryAddress = userAddressCache.get(user.id);
     const order = await createOrder(user.id, availableCodes, deliveryAddress);
 
+    console.log(`[Conversation] Email del usuario: "${user.email}", nombre: "${name}", orden: ${order.id}`);
     if (user.email) {
+      console.log("[Conversation] Intentando enviar email de confirmación...");
       sendPurchaseConfirmation({
         to: user.email,
         buyerName: name,
@@ -555,7 +557,11 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
         stickers: availableCodes,
         totalAmount: order.totalAmount,
         deliveryAddress: deliveryAddress || undefined,
-      }).catch(e => console.error("[Conversation] Error enviando email de reserva:", e));
+      })
+        .then(ok => console.log(`[Conversation] Email resultado: ${ok}`))
+        .catch(e => console.error("[Conversation] Error enviando email:", e));
+    } else {
+      console.log("[Conversation] Usuario NO tiene email, no se envía correo");
     }
 
     let msg = `✅ *Láminas reservadas, ${name}!*\n\n`;

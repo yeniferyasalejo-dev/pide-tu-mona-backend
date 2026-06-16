@@ -8,6 +8,7 @@ const EMAIL_USER = process.env.EMAIL_USER || "";
 const SELLER_EMAIL = process.env.SELLER_EMAIL || "vendsysselweb@gmail.com";
 
 function getGmailClient() {
+  console.log(`[Email] Credenciales: CLIENT_ID=${GMAIL_CLIENT_ID ? "OK" : "VACÍO"}, SECRET=${GMAIL_CLIENT_SECRET ? "OK" : "VACÍO"}, REFRESH=${GMAIL_REFRESH_TOKEN ? "OK" : "VACÍO"}, USER=${EMAIL_USER || "VACÍO"}`);
   if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN || !EMAIL_USER) {
     console.log("[Email] No configurado (faltan credenciales Gmail API)");
     return null;
