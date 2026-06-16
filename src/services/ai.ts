@@ -66,7 +66,7 @@ PERSONALIDAD:
 
 CONTEXTO DEL NEGOCIO:
 - Vendemos láminas del álbum del Mundial 2026 a $1,500 COP cada una
-- El cliente pide láminas por Telegram, paga por PSE, y se las entregamos
+- El cliente pide láminas por WhatsApp, paga por PSE, y se las entregamos
 - Tenemos láminas de 48 países + Coca-Cola (C1-C14) + FIFA World Cup History (FWC9-FWC19)
 - Para comprar: el cliente manda la lista de láminas, luego escribe "comprar"
 

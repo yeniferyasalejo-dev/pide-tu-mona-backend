@@ -88,7 +88,7 @@ export async function sendPurchaseConfirmation(params: {
         <p>Te contactaremos pronto para coordinar la entrega de tus laminas.</p>
 
         <p style="color:#666;font-size:12px;margin-top:30px;">
-          Este es un correo automatico de Pide Tu Mona. Si tienes dudas, escribenos por Telegram @mundial26_bot.
+          Este es un correo automatico de Pide Tu Mona. Si tienes dudas, escribenos por WhatsApp: wa.me/573011248084.
         </p>
       </div>
     </div>

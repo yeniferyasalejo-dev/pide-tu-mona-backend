@@ -464,7 +464,7 @@ async function startPurchaseFlow(user: User): Promise<string> {
   if (!isTpagaEnabled()) {
     return (
       `*${name}*, los pagos en línea estarán disponibles muy pronto! 🚧\n\n` +
-      `Por ahora, contáctanos por Telegram para coordinar tu compra.`
+      `Por ahora, contáctanos por WhatsApp para coordinar tu compra.`
     );
   }
 

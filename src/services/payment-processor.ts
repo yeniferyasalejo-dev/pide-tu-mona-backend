@@ -7,17 +7,14 @@ import {
   OrderAlreadySettledError,
 } from "./users";
 import { sendPurchaseConfirmation } from "./email";
-import { sendTelegramMessage } from "./telegram";
 import { sendWhatsAppMessage } from "./whatsapp";
 
 async function sendMessageToUser(
-  user: { telegramChatId?: string | null; whatsappPhone?: string | null; channel?: string },
+  user: { whatsappPhone?: string | null },
   message: string
 ) {
-  if (user.channel === "whatsapp" && user.whatsappPhone) {
+  if (user.whatsappPhone) {
     await sendWhatsAppMessage(user.whatsappPhone, message);
-  } else if (user.telegramChatId) {
-    await sendTelegramMessage(user.telegramChatId, message);
   }
 }
 
