@@ -17,6 +17,7 @@ function getTransporter() {
       user: EMAIL_USER,
       pass: EMAIL_APP_PASSWORD,
     },
+    family: 4,
   });
 }
 
