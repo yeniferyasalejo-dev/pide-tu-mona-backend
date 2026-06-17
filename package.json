@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "dev:polling": "ts-node src/polling.ts",
-    "build": "npx prisma generate && tsc",
-    "start": "npx prisma migrate deploy && node dist/start.js",
-    "db:migrate": "npx prisma migrate deploy",
+    "build": "node scripts/with-direct-url.js npx prisma generate && tsc",
+    "start": "node scripts/with-direct-url.js npx prisma migrate deploy && node dist/start.js",
+    "db:migrate": "node scripts/with-direct-url.js npx prisma migrate deploy",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio"
   },
