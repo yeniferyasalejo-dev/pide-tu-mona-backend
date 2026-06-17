@@ -12,6 +12,7 @@ import webhookRouter from "./routes/webhook";
 import adminRouter from "./routes/admin";
 import tpagaWebhookRouter from "./routes/tpaga-webhook";
 import whatsappWebhookRouter from "./routes/whatsapp-webhook";
+import { startReconciliationWorker } from "./services/tpaga-reconciliation";
 import { findOrCreateUser } from "./services/users";
 import { processMessage } from "./services/conversation";
 import { sendTelegramMessage, deleteWebhook } from "./services/telegram";
@@ -76,6 +77,7 @@ app.get("/health", (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[Server] Pide Tu Mona corriendo en puerto ${PORT}`);
+  startReconciliationWorker();
 });
 
 // === Telegram Polling ===

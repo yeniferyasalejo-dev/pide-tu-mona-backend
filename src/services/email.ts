@@ -120,6 +120,73 @@ export async function sendPurchaseConfirmation(params: {
 }
 
 /**
+ * Reserva contra entrega (sin PSE / sin Tpaga).
+ */
+export async function sendReservationConfirmation(params: {
+  to: string;
+  buyerName: string;
+  orderId: string;
+  stickers: string[];
+  totalAmount: number;
+  deliveryAddress?: string;
+}): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) {
+    console.log("[Email] No se puede enviar reserva — email no configurado");
+    return false;
+  }
+
+  const totalFormatted = new Intl.NumberFormat("es-CO").format(params.totalAmount);
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:#1a7a2e;color:white;padding:20px;text-align:center;">
+        <h1 style="margin:0;">Pide Tu Mona</h1>
+        <p style="margin:5px 0 0;">Reserva registrada</p>
+      </div>
+      <div style="padding:20px;">
+        <p>Hola <strong>${params.buyerName}</strong>,</p>
+        <p>Tu reserva fue registrada. El pago será <strong>contra entrega</strong>.</p>
+        <p><strong>Orden:</strong> #${params.orderId.substring(0, 8)}</p>
+        <p><strong>Láminas (${params.stickers.length}):</strong> ${params.stickers.join(", ")}</p>
+        <p><strong>Total a pagar al recibir:</strong> $${totalFormatted} COP</p>
+        ${params.deliveryAddress ? `
+        <div style="background:#f0f8f0;padding:15px;border-radius:8px;margin:15px 0;">
+          <h3 style="margin:0 0 10px;color:#1a7a2e;">Dirección de entrega</h3>
+          <p style="margin:0;white-space:pre-line;">${params.deliveryAddress}</p>
+        </div>` : ""}
+        <p>Te contactaremos para coordinar la entrega.</p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"Pide Tu Mona" <${EMAIL_USER}>`,
+      to: params.to,
+      subject: `Reserva #${params.orderId.substring(0, 8)} - Pago contra entrega`,
+      html,
+    });
+
+    await sendSellerNotification({
+      to: params.to,
+      buyerName: params.buyerName,
+      orderId: params.orderId,
+      stickers: params.stickers,
+      totalAmount: params.totalAmount,
+      deliveryAddress: params.deliveryAddress,
+    });
+
+    console.log(`[Email] Reserva COD enviada a ${params.to}`);
+    return true;
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[Email] Error enviando reserva:", msg);
+    return false;
+  }
+}
+
+/**
  * Notifica a la vendedora de una nueva venta
  */
 async function sendSellerNotification(params: {

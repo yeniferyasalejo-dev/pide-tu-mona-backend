@@ -1,16 +1,23 @@
 import axios from "axios";
+import prisma from "../lib/prisma";
 
 const BASE_URL = process.env.TPAGA_BASE_URL || "https://staging.apiv2.tpaga.co";
 const CLIENT_ID = process.env.TPAGA_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.TPAGA_CLIENT_SECRET || "";
+const BANKS_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Cache del token JWT
+export type BankOption = { code: string; name: string };
+
+// Cache del token JWT (en memoria; se renueva por expires_in)
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 
-// Cache de bancos (se actualiza cada 24h)
-let cachedBanks: { code: string; name: string }[] = [];
-let banksUpdatedAt = 0;
+// Evita refrescos simultáneos de la lista de bancos
+let banksRefreshPromise: Promise<BankOption[]> | null = null;
+
+// L1 en memoria (se pierde al reiniciar; la fuente de verdad es la BD)
+let memoryBanks: BankOption[] = [];
+let memoryBanksUpdatedAt = 0;
 
 /**
  * Verifica si Tpaga está configurado
@@ -42,7 +49,6 @@ export function normalizeColombianPhone(value?: string | null): string {
  * Obtiene un token JWT de Tpaga usando OAuth2 client credentials
  */
 async function getAccessToken(): Promise<string> {
-  // Usar token cacheado si no ha expirado
   if (cachedToken && Date.now() < tokenExpiresAt - 60000) {
     return cachedToken;
   }
@@ -73,35 +79,120 @@ async function getAccessToken(): Promise<string> {
   }
 }
 
-/**
- * Obtiene la lista de bancos disponibles para PSE
- */
-export async function getBanks(): Promise<{ code: string; name: string }[]> {
-  // Cache de 24 horas
-  if (cachedBanks.length > 0 && Date.now() - banksUpdatedAt < 24 * 60 * 60 * 1000) {
-    return cachedBanks;
+function isValidBankList(banks: unknown): banks is BankOption[] {
+  return (
+    Array.isArray(banks) &&
+    banks.every(
+      (b) =>
+        b &&
+        typeof b === "object" &&
+        typeof (b as BankOption).code === "string" &&
+        typeof (b as BankOption).name === "string"
+    )
+  );
+}
+
+async function loadBanksFromDatabase(): Promise<{
+  banks: BankOption[];
+  updatedAt: Date;
+} | null> {
+  const row = await prisma.pseBankCache.findUnique({
+    where: { id: "default" },
+  });
+
+  if (!row || !isValidBankList(row.banks)) {
+    return null;
   }
 
+  return {
+    banks: row.banks as BankOption[],
+    updatedAt: row.updatedAt,
+  };
+}
+
+async function saveBanksToDatabase(banks: BankOption[]): Promise<void> {
+  await prisma.pseBankCache.upsert({
+    where: { id: "default" },
+    create: { id: "default", banks },
+    update: { banks },
+  });
+
+  memoryBanks = banks;
+  memoryBanksUpdatedAt = Date.now();
+  console.log(
+    `[Tpaga] Lista de bancos persistida (${banks.length} bancos) at=${new Date().toISOString()}`
+  );
+}
+
+async function fetchBanksFromTpaga(): Promise<BankOption[]> {
   const token = await getAccessToken();
 
-  try {
-    const res = await axios.get(`${BASE_URL}/api/pse/v1/public/banks`, {
-      headers: { Authorization: `Bearer ${token}` },
-      timeout: 10000,
-    });
+  const res = await axios.get(`${BASE_URL}/api/pse/v1/public/banks`, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 10000,
+  });
 
-    cachedBanks = res.data.map((b: { name: string; code: string }) => ({
-      code: b.code,
-      name: b.name,
-    }));
-    banksUpdatedAt = Date.now();
-    console.log(`[Tpaga] ${cachedBanks.length} bancos cargados`);
-    return cachedBanks;
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error("[Tpaga] Error obteniendo bancos:", msg);
-    throw new Error("No se pudo obtener la lista de bancos");
+  const banks = res.data.map((b: { name: string; code: string }) => ({
+    code: b.code,
+    name: b.name,
+  }));
+
+  await saveBanksToDatabase(banks);
+  return banks;
+}
+
+function getMemoryBanksIfFresh(): BankOption[] | null {
+  if (
+    memoryBanks.length > 0 &&
+    Date.now() - memoryBanksUpdatedAt < BANKS_TTL_MS
+  ) {
+    return memoryBanks;
   }
+  return null;
+}
+
+/**
+ * Obtiene la lista de bancos PSE con caché persistente (TTL 24h).
+ * Si Tpaga falla, devuelve la última lista válida almacenada.
+ */
+export async function getBanks(): Promise<BankOption[]> {
+  const fromMemory = getMemoryBanksIfFresh();
+  if (fromMemory) {
+    return fromMemory;
+  }
+
+  const fromDb = await loadBanksFromDatabase();
+  if (fromDb && Date.now() - fromDb.updatedAt.getTime() < BANKS_TTL_MS) {
+    memoryBanks = fromDb.banks;
+    memoryBanksUpdatedAt = fromDb.updatedAt.getTime();
+    return fromDb.banks;
+  }
+
+  if (!banksRefreshPromise) {
+    banksRefreshPromise = (async () => {
+      try {
+        return await fetchBanksFromTpaga();
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[Tpaga] Error obteniendo bancos:", msg);
+
+        if (fromDb) {
+          console.warn(
+            "[Tpaga] Devolviendo lista de bancos en caché (última válida)"
+          );
+          memoryBanks = fromDb.banks;
+          memoryBanksUpdatedAt = fromDb.updatedAt.getTime();
+          return fromDb.banks;
+        }
+
+        throw new Error("No se pudo obtener la lista de bancos");
+      }
+    })().finally(() => {
+      banksRefreshPromise = null;
+    });
+  }
+
+  return banksRefreshPromise;
 }
 
 /**
@@ -176,13 +267,22 @@ export async function createCharge(params: {
 }
 
 /**
- * Consulta el estado de un cobro
+ * Consulta el estado de un cobro (solo reconciliación / fallback excepcional).
  */
 export async function getChargeStatus(chargeToken: string): Promise<{
   status: string;
   transactionState: string | null;
   rejectedReason: string | null;
 }> {
+  const mockStatus = process.env.TPAGA_VERIFY_MOCK_CHARGE_STATUS;
+  if (mockStatus) {
+    return {
+      status: mockStatus,
+      transactionState: null,
+      rejectedReason: mockStatus.includes("reject") ? "mock_rejected" : null,
+    };
+  }
+
   const token = await getAccessToken();
 
   try {

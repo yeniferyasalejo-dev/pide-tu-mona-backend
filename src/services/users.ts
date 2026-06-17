@@ -123,14 +123,26 @@ export async function getAvailableStickersForUser(userId: string) {
 /**
  * Crea una orden de compra
  */
-export async function createOrder(userId: string, stickerCodes: string[], deliveryAddress?: string) {
-  const totalAmount = stickerCodes.length * STICKER_PRICE + DELIVERY_FEE + PSE_FEE;
+export async function createOrder(
+  userId: string,
+  stickerCodes: string[],
+  deliveryAddress: string | undefined,
+  options: { paymentMethod: "PSE" | "COD" }
+) {
+  const { paymentMethod } = options;
+  const totalAmount =
+    stickerCodes.length * STICKER_PRICE +
+    DELIVERY_FEE +
+    (paymentMethod === "PSE" ? PSE_FEE : 0);
 
   return prisma.order.create({
     data: {
       userId,
       totalAmount,
       status: "PENDING",
+      paymentMethod,
+      confirmationEmailStatus: "PENDING",
+      userNotificationStatus: "PENDING",
       deliveryAddress: deliveryAddress || null,
       items: {
         create: stickerCodes.map((code) => ({
@@ -156,7 +168,9 @@ export async function updateOrderWithTpaga(
       tpagaChargeToken: data.tpagaChargeToken,
       tpagaBankUrl: data.tpagaBankUrl,
       bankCode: data.bankCode,
+      tpagaStatus: "pending",
       status: "PROCESSING",
+      paymentMethod: "PSE",
     },
   });
 }
@@ -233,14 +247,21 @@ export async function discountInventory(stickerCodes: string[]): Promise<{
   return { discounted, outOfStock };
 }
 
+const SETTLEABLE_ORDER_STATUSES = ["PENDING", "PROCESSING", "FAILED"] as const;
+
 /**
- * Confirma el pago de una orden de forma atómica:
- * descuenta inventario, limpia el carrito y marca la orden como PAID en una sola transacción.
+ * Confirma el pago de una orden de forma atómica.
+ * Permite recuperar una orden FAILED si luego llega settled válido.
+ * Una orden PAID nunca vuelve a descontar inventario.
  */
 export async function settleOrderPayment(
   orderId: string,
   userId: string,
-  stickerCodes: string[]
+  stickerCodes: string[],
+  options?: {
+    tpagaStatus?: string;
+    webhookEventId?: string;
+  }
 ): Promise<{ settled: boolean; discounted: string[]; outOfStock: string[] }> {
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -248,7 +269,23 @@ export async function settleOrderPayment(
       select: { status: true },
     });
 
-    if (!order || order.status === "PAID" || order.status === "FAILED") {
+    if (!order || order.status === "PAID") {
+      if (options?.webhookEventId && order?.status === "PAID") {
+        await tx.tpagaWebhookEvent.updateMany({
+          where: {
+            id: options.webhookEventId,
+            processingStatus: { not: "PROCESSED" },
+          },
+          data: {
+            processingStatus: "PROCESSED",
+            processedAt: new Date(),
+          },
+        });
+      }
+      return { settled: false, discounted: [], outOfStock: [] };
+    }
+
+    if (!SETTLEABLE_ORDER_STATUSES.includes(order.status as (typeof SETTLEABLE_ORDER_STATUSES)[number])) {
       return { settled: false, discounted: [], outOfStock: [] };
     }
 
@@ -268,6 +305,10 @@ export async function settleOrderPayment(
       }
     }
 
+    if (process.env.TPAGA_VERIFY_FAIL_AFTER_INVENTORY === "1") {
+      throw new Error("TPAGA_VERIFY_FAIL_AFTER_INVENTORY");
+    }
+
     if (discounted.length > 0) {
       await tx.stickerNeeded.deleteMany({
         where: { userId, stickerCode: { in: discounted } },
@@ -275,16 +316,112 @@ export async function settleOrderPayment(
     }
 
     const paid = await tx.order.updateMany({
-      where: { id: orderId, status: { in: ["PENDING", "PROCESSING"] } },
-      data: { status: "PAID" },
+      where: {
+        id: orderId,
+        status: { in: [...SETTLEABLE_ORDER_STATUSES] },
+      },
+      data: {
+        status: "PAID",
+        ...(options?.tpagaStatus ? { tpagaStatus: options.tpagaStatus } : {}),
+      },
     });
 
     if (paid.count === 0) {
       throw new OrderAlreadySettledError(orderId);
     }
 
+    if (options?.webhookEventId) {
+      await tx.tpagaWebhookEvent.updateMany({
+        where: {
+          id: options.webhookEventId,
+          processingStatus: { not: "PROCESSED" },
+        },
+        data: {
+          processingStatus: "PROCESSED",
+          processedAt: new Date(),
+          processingError: null,
+        },
+      });
+    }
+
     return { settled: true, discounted, outOfStock };
   });
+}
+
+/**
+ * Rechaza una orden de forma atómica y marca el evento webhook si aplica.
+ */
+export async function rejectOrderPayment(
+  orderId: string,
+  options?: {
+    tpagaStatus?: string;
+    webhookEventId?: string;
+  }
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const failed = await tx.order.updateMany({
+      where: { id: orderId, status: { in: ["PENDING", "PROCESSING"] } },
+      data: {
+        status: "FAILED",
+        ...(options?.tpagaStatus ? { tpagaStatus: options.tpagaStatus } : {}),
+      },
+    });
+
+    if (failed.count === 0) {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { status: true },
+      });
+      if (order?.status === "PAID" || order?.status === "FAILED") {
+        if (options?.webhookEventId) {
+          await tx.tpagaWebhookEvent.updateMany({
+            where: {
+              id: options.webhookEventId,
+              processingStatus: { not: "PROCESSED" },
+            },
+            data: {
+              processingStatus: "PROCESSED",
+              processedAt: new Date(),
+            },
+          });
+        }
+      }
+      return false;
+    }
+
+    if (options?.webhookEventId) {
+      await tx.tpagaWebhookEvent.updateMany({
+        where: {
+          id: options.webhookEventId,
+          processingStatus: { not: "PROCESSED" },
+        },
+        data: {
+          processingStatus: "PROCESSED",
+          processedAt: new Date(),
+          processingError: null,
+        },
+      });
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Actualiza tpagaStatus solo si la orden sigue abierta.
+ */
+export async function updateOrderTpagaStatusIfOpen(
+  orderId: string,
+  tpagaStatus: string
+): Promise<boolean> {
+  const result = await prisma.order.updateMany({
+    where: {
+      id: orderId,
+      status: { in: ["PENDING", "PROCESSING", "FAILED"] },
+    },
+    data: { tpagaStatus },
+  });
+  return result.count > 0;
 }
 
 /**

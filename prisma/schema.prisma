@@ -24,20 +24,77 @@ model User {
 }
 
 model Order {
-  id                String      @id @default(uuid())
-  userId            String      @map("user_id")
-  status            String      @default("PENDING") // PENDING, PROCESSING, PAID, FAILED, EXPIRED
-  totalAmount       Int         @map("total_amount") // en COP
-  tpagaChargeToken  String?     @map("tpaga_charge_token")
-  tpagaBankUrl      String?     @map("tpaga_bank_url")
-  bankCode          String?     @map("bank_code")
-  deliveryAddress   String?     @map("delivery_address")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
-  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items             OrderItem[]
+  id                         String      @id @default(uuid())
+  userId                     String      @map("user_id")
+  status                     String      @default("PENDING") // PENDING, PROCESSING, PAID, FAILED, EXPIRED
+  paymentMethod              String?     @map("payment_method") // PSE | COD | null (legacy)
+  totalAmount                Int         @map("total_amount") // en COP
+  tpagaChargeToken           String?     @map("tpaga_charge_token")
+  tpagaStatus                String?     @map("tpaga_status")
+  tpagaBankUrl               String?     @map("tpaga_bank_url")
+  bankCode                   String?     @map("bank_code")
+  deliveryAddress            String?     @map("delivery_address")
+  confirmationEmailStatus    String?     @map("confirmation_email_status") // PENDING | PROCESSING | SENT | FAILED
+  confirmationEmailClaimedAt DateTime?   @map("confirmation_email_claimed_at")
+  confirmationEmailSentAt    DateTime?   @map("confirmation_email_sent_at")
+  confirmationEmailLastError String?     @map("confirmation_email_last_error")
+  confirmationEmailAttempts  Int         @default(0) @map("confirmation_email_attempts")
+  userNotificationStatus     String?     @map("user_notification_status")
+  userNotificationClaimedAt  DateTime?   @map("user_notification_claimed_at")
+  userNotificationSentAt     DateTime?   @map("user_notification_sent_at")
+  userNotificationLastError  String?     @map("user_notification_last_error")
+  userNotificationAttempts   Int         @default(0) @map("user_notification_attempts")
+  createdAt                  DateTime    @default(now()) @map("created_at")
+  updatedAt                  DateTime    @updatedAt @map("updated_at")
+  user                       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                      OrderItem[]
 
   @@map("orders")
+}
+
+/// Recepción del webhook (idempotencia de notificación).
+model TpagaWebhookEvent {
+  id               String    @id @default(uuid())
+  idempotencyKey   String    @unique @map("idempotency_key")
+  chargeToken      String    @map("charge_token")
+  status           String?
+  orderId          String?   @map("order_id")
+  processingStatus String    @default("RECEIVED") @map("processing_status") // RECEIVED | PROCESSING | PROCESSED | FAILED
+  processingError  String?   @map("processing_error")
+  processedAt      DateTime? @map("processed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([chargeToken])
+  @@map("tpaga_webhook_events")
+}
+
+/// Cola persistente de reconciliación (sobrevive reinicios y múltiples instancias).
+model TpagaReconciliation {
+  id             String    @id @default(uuid())
+  chargeToken    String    @unique @map("charge_token")
+  orderId        String?   @map("order_id")
+  status         String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | EXHAUSTED
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3) @map("max_attempts")
+  nextAttemptAt  DateTime  @map("next_attempt_at")
+  lastError      String?   @map("last_error")
+  webhookEventId String?   @map("webhook_event_id")
+  lockedAt       DateTime? @map("locked_at")
+  lockedBy       String?   @map("locked_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, nextAttemptAt])
+  @@map("tpaga_reconciliations")
+}
+
+model PseBankCache {
+  id        String   @id @default("default")
+  banks     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("pse_bank_cache")
 }
 
 model OrderItem {

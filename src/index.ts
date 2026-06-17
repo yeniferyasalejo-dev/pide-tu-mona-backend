@@ -7,6 +7,7 @@ import adminRouter from "./routes/admin";
 import tpagaWebhookRouter from "./routes/tpaga-webhook";
 import whatsappWebhookRouter from "./routes/whatsapp-webhook";
 import { setWebhook } from "./services/telegram";
+import { startReconciliationWorker } from "./services/tpaga-reconciliation";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,7 @@ app.get("/setup-webhook", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[Server] Pide Tu Mona corriendo en puerto ${PORT}`);
+  startReconciliationWorker();
 });
 
 export default app;

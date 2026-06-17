@@ -1,6 +1,10 @@
 import { Router, Request, Response } from "express";
-import { processChargeResult, stopChargePolling } from "../services/payment-processor";
 import { findOrderById } from "../services/users";
+import {
+  acceptTpagaWebhook,
+  isTpagaWebhookAuthorized,
+} from "../services/tpaga-webhook-handler";
+import { logTpagaWebhookError } from "../services/tpaga-webhook-logger";
 
 const router = Router();
 
@@ -51,95 +55,65 @@ function renderPaymentStatusPage(options: {
     </html>`;
 }
 
-router.post("/tpaga/webhook", (req: Request, res: Response) => {
-  const chargeToken = String(req.body?.charge_token ?? "").trim();
+router.post("/tpaga/webhook", async (req: Request, res: Response) => {
+  try {
+    const result = await acceptTpagaWebhook(
+      req.body,
+      isTpagaWebhookAuthorized(req)
+    );
 
-  console.log("[Tpaga Webhook] Notificación recibida", {
-    contentType: req.headers["content-type"],
-    chargeToken: chargeToken || null,
-  });
-
-  if (!chargeToken) {
-    console.error("[Tpaga Webhook] No llegó charge_token");
-
-    res.status(400).json({
-      received: false,
-      error: "charge_token is required",
-    });
-    return;
-  }
-
-  res.status(200).json({
-    received: true,
-  });
-
-  void (async () => {
-    try {
-      const processed = await processChargeResult(chargeToken);
-
-      if (processed) {
-        stopChargePolling(chargeToken);
-        console.log(
-          `[Tpaga Webhook] Cobro ${chargeToken} procesado correctamente`
-        );
-      } else {
-        console.log(
-          `[Tpaga Webhook] Cobro ${chargeToken} aún no tiene estado final`
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[Tpaga Webhook] Error procesando ${chargeToken}:`,
-        error
-      );
+    if (!result.ok) {
+      res.status(result.statusCode).json(result.body);
+      return;
     }
-  })();
+
+    res.status(200).json({
+      received: true,
+      duplicate: result.duplicate,
+    });
+  } catch (error) {
+    logTpagaWebhookError("handler_failed", { source: "webhook" }, error);
+    res.status(500).json({
+      received: false,
+      error: "internal_error",
+    });
+  }
 });
 
 /**
- * Pagina de retorno despues de pagar en PSE
+ * Pagina de retorno despues de pagar en PSE.
+ * Solo consulta la base de datos; no llama a Tpaga.
  */
 router.get("/payment/status", async (req: Request, res: Response) => {
-  const orderId = typeof req.query.orderId === "string" ? req.query.orderId.trim() : "";
+  const orderId =
+    typeof req.query.orderId === "string" ? req.query.orderId.trim() : "";
 
   if (!orderId) {
     res.status(400).send(
       renderPaymentStatusPage({
         title: "Pide Tu Mona - Pago",
         heading: "Pide Tu Mona",
-        message: "Falta el identificador de la orden. Vuelve al enlace de pago o contactanos por WhatsApp.",
+        message:
+          "Falta el identificador de la orden. Vuelve al enlace de pago o contactanos por WhatsApp.",
         emoji: "⚠️",
       })
     );
     return;
   }
 
-  let order = await findOrderById(orderId);
+  const order = await findOrderById(orderId);
 
   if (!order) {
     res.status(404).send(
       renderPaymentStatusPage({
         title: "Pide Tu Mona - Pago",
         heading: "Pide Tu Mona",
-        message: "No encontramos esta orden. Si ya pagaste, te avisaremos por WhatsApp en unos minutos.",
+        message:
+          "No encontramos esta orden. Si ya pagaste, te avisaremos por WhatsApp en unos minutos.",
         emoji: "🔍",
       })
     );
     return;
-  }
-
-  const isFinalStatus = order.status === "PAID" || order.status === "FAILED";
-
-  if (!isFinalStatus && order.tpagaChargeToken) {
-    try {
-      await processChargeResult(order.tpagaChargeToken);
-      order = (await findOrderById(orderId)) ?? order;
-    } catch (error) {
-      console.error(
-        `[Payment Status] Error consultando pago para orden ${orderId}:`,
-        error
-      );
-    }
   }
 
   if (order.status === "PAID") {

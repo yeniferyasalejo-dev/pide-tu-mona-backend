@@ -14,7 +14,7 @@ import {
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
 import { interpretMessage, addToHistory, clearHistory } from "./ai";
 import { isTpagaEnabled, getBanks, createCharge, normalizeColombianPhone } from "./tpaga";
-import { startChargePolling } from "./payment-processor";
+import { sendReservationConfirmation } from "./email";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
 
@@ -461,14 +461,6 @@ async function handleCart(user: User): Promise<string> {
 async function startPurchaseFlow(user: User): Promise<string> {
   const name = user.name || "amigo";
 
-  if (!isTpagaEnabled()) {
-    return (
-      `*${name}*, los pagos en línea estarán disponibles muy pronto! 🚧\n\n` +
-      `Por ahora, contáctanos por Telegram para coordinar tu compra.`
-    );
-  }
-
-  // Obtener láminas disponibles del usuario
   const availableCodes = await getAvailableStickersForUser(user.id);
 
   if (availableCodes.length === 0) {
@@ -479,11 +471,31 @@ async function startPurchaseFlow(user: User): Promise<string> {
   }
 
   const subtotal = availableCodes.length * STICKER_PRICE;
-  const grandTotal = subtotal + DELIVERY_FEE + PSE_FEE;
+  const usePse = isTpagaEnabled();
+  const grandTotal = subtotal + DELIVERY_FEE + (usePse ? PSE_FEE : 0);
   const subtotalFormatted = new Intl.NumberFormat("es-CO").format(subtotal);
   const grandTotalFormatted = new Intl.NumberFormat("es-CO").format(grandTotal);
 
   await updateStep(user.id, "WAITING_ADDRESS");
+
+  if (!usePse) {
+    return (
+      `🛒 *Resumen de reserva* (pago contra entrega)\n\n` +
+      `Láminas: *${availableCodes.length}*\n` +
+      `${availableCodes.join(", ")}\n\n` +
+      `💰 *Desglose:*\n` +
+      `• Láminas: $${subtotalFormatted} COP ($${STICKER_PRICE_FORMATTED} c/u)\n` +
+      `• Envío: $${DELIVERY_FEE_FORMATTED} COP\n` +
+      `• *Total a pagar al recibir: $${grandTotalFormatted} COP*\n\n` +
+      `📦 Para la entrega, envíame tus datos en un solo mensaje:\n\n` +
+      `Ciudad:\n` +
+      `Barrio:\n` +
+      `Dirección/Conjunto:\n` +
+      `Nombre de quien recibe:\n` +
+      `Datos adicionales:\n\n` +
+      `Escribe *cancelar* para cancelar.`
+    );
+  }
 
   return (
     `🛒 *Resumen de compra:*\n\n` +
@@ -531,11 +543,15 @@ async function handleAddress(user: User, text: string): Promise<string> {
 
   await updateStep(user.id, "WAITING_PURCHASE_CONFIRM");
 
+  const confirmLabel = isTpagaEnabled()
+    ? "continuar al pago"
+    : "confirmar la reserva (pago contra entrega)";
+
   return (
     `📦 *Dirección registrada* ✅\n\n` +
     `${text}\n\n` +
     `¿Todo correcto?\n` +
-    `• Escribe *si* para continuar al pago\n` +
+    `• Escribe *si* para ${confirmLabel}\n` +
     `• Escribe *cancelar* para cancelar`
   );
 }
@@ -544,6 +560,10 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
   const lower = text.toLowerCase().trim();
 
   if (isIntentYes(lower)) {
+    if (!isTpagaEnabled()) {
+      return completeCodReservation(user);
+    }
+
     // Obtener bancos y mostrar lista
     try {
       const banks = await getBanks();
@@ -589,6 +609,51 @@ async function handlePurchaseConfirm(user: User, text: string): Promise<string> 
   } catch { /* ignorar */ }
 
   return "Escribe *si* para continuar con la compra o *cancelar* para cancelar.";
+}
+
+async function completeCodReservation(user: User): Promise<string> {
+  const name = user.name || "amigo";
+  const deliveryAddress = userAddressCache.get(user.id);
+
+  if (!deliveryAddress) {
+    await updateStep(user.id, "DONE");
+    return "Algo salió mal con la dirección. Escribe *comprar* para intentar de nuevo.";
+  }
+
+  const availableCodes = await getAvailableStickersForUser(user.id);
+  if (availableCodes.length === 0) {
+    await updateStep(user.id, "DONE");
+    return "Ya no hay láminas disponibles. Intenta más tarde.";
+  }
+
+  const order = await createOrder(user.id, availableCodes, deliveryAddress, {
+    paymentMethod: "COD",
+  });
+
+  const email = user.email;
+  if (email) {
+    await sendReservationConfirmation({
+      to: email,
+      buyerName: name,
+      orderId: order.id,
+      stickers: availableCodes,
+      totalAmount: order.totalAmount,
+      deliveryAddress,
+    });
+  }
+
+  userAddressCache.delete(user.id);
+  await updateStep(user.id, "DONE");
+
+  const totalFormatted = new Intl.NumberFormat("es-CO").format(order.totalAmount);
+
+  return (
+    `✅ *Reserva registrada* (pago contra entrega)\n\n` +
+    `Orden: *#${order.id.substring(0, 8)}*\n` +
+    `Láminas: ${availableCodes.join(", ")}\n` +
+    `Total al recibir: *$${totalFormatted} COP*\n\n` +
+    `Te enviamos la confirmación a tu correo. Te contactaremos para coordinar la entrega. 📦`
+  );
 }
 
 async function handleBankSelection(user: User, text: string): Promise<string> {
@@ -729,7 +794,9 @@ async function handlePaymentEmail(user: User, text: string): Promise<string> {
   }
 
   const deliveryAddress = userAddressCache.get(user.id);
-  const order = await createOrder(user.id, availableCodes, deliveryAddress);
+  const order = await createOrder(user.id, availableCodes, deliveryAddress, {
+    paymentMethod: "PSE",
+  });
 
   try {
     if (!APP_BASE_URL) {
@@ -760,8 +827,6 @@ async function handlePaymentEmail(user: User, text: string): Promise<string> {
     });
 
     await updateStep(user.id, "WAITING_PAYMENT");
-
-    startChargePolling(charge.token);
 
     // Limpiar cache
     userBanksCache.delete(user.id);
