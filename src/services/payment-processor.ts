@@ -243,6 +243,7 @@ async function handleConfirmedPayment(params: {
           stickers: discounted,
           totalAmount: order.totalAmount,
           deliveryAddress: order.deliveryAddress || undefined,
+          whatsappPhone: order.user.whatsappPhone || undefined,
         });
         await markConfirmationEmailSent(order.id);
       } catch (error) {

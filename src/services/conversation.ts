@@ -10,6 +10,8 @@ import {
   findPendingOrder,
   markOrderFailed,
   updateUserStep,
+  discountInventory,
+  removePurchasedStickers,
 } from "./users";
 import { isValidEmail, parseStickerCodes, detectOutOfRange, VALID_COUNTRIES, STICKER_PRICE, STICKER_PRICE_FORMATTED, DELIVERY_FEE, DELIVERY_FEE_FORMATTED, PSE_FEE, PSE_FEE_FORMATTED } from "../utils/validators";
 import { interpretMessage, addToHistory, clearHistory } from "./ai";
@@ -530,6 +532,12 @@ async function handleAddress(user: User, text: string): Promise<string> {
     return "Compra cancelada. Si necesitas más láminas, solo mándame la lista. 👍";
   }
 
+  const notAddressPatterns = /^(comprar|quiero|necesito|otra|otras|cambiar|agregar|nueva|ver|lista|lamina|lámina)/i;
+  if (notAddressPatterns.test(lower)) {
+    await updateStep(user.id, "DONE");
+    return "Entendido, volvemos al inicio. Mándame las láminas que necesitas. 👍";
+  }
+
   // Validar que tenga al menos algo razonable (mínimo 10 caracteres)
   if (text.length < 10) {
     return (
@@ -630,15 +638,24 @@ async function completeCodReservation(user: User): Promise<string> {
     paymentMethod: "COD",
   });
 
+  const { discounted, outOfStock } = await discountInventory(availableCodes);
+  if (discounted.length > 0) {
+    await removePurchasedStickers(user.id, discounted);
+  }
+  console.log(
+    `[Conversation] Inventario COD descontado: ${discounted.length} OK, ${outOfStock.length} sin stock`
+  );
+
   const email = user.email;
   if (email) {
     await sendReservationConfirmation({
       to: email,
       buyerName: name,
       orderId: order.id,
-      stickers: availableCodes,
+      stickers: discounted.length > 0 ? discounted : availableCodes,
       totalAmount: order.totalAmount,
       deliveryAddress,
+      whatsappPhone: user.whatsappPhone || undefined,
     });
   }
 

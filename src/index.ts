@@ -2,7 +2,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import webhookRouter from "./routes/webhook";
 import adminRouter from "./routes/admin";
 import tpagaWebhookRouter from "./routes/tpaga-webhook";
 import whatsappWebhookRouter from "./routes/whatsapp-webhook";
@@ -14,18 +13,14 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Rutas
-app.use(webhookRouter);
 app.use(adminRouter);
 app.use(tpagaWebhookRouter);
 app.use(whatsappWebhookRouter);
 
-// Health check
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", channel: "whatsapp", timestamp: new Date().toISOString() });
 });
 
-// Configurar webhook de Telegram (llamar una vez con la URL pública)
 app.get("/setup-webhook", async (req, res) => {
   if (!canRunTelegramInfra()) {
     logTelegramStartupStatus();
