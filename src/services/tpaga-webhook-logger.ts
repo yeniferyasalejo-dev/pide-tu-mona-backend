@@ -7,6 +7,7 @@ type WebhookLogFields = {
   receivedFields?: string[];
   error?: string;
   duplicate?: boolean;
+  reason?: string;
 };
 
 function formatTimestamp(): string {
@@ -26,6 +27,7 @@ function formatFields(fields: WebhookLogFields): string {
       : null,
     fields.duplicate ? "duplicate=true" : null,
     fields.error ? `error=${fields.error}` : null,
+    fields.reason ? `reason=${fields.reason}` : null,
   ].filter(Boolean);
 
   return parts.join(" ");

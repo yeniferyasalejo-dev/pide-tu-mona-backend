@@ -1,9 +1,19 @@
 import axios from "axios";
+import {
+  canRunTelegramInfra,
+  canSendTelegramMessages,
+  getTelegramBotToken,
+  isTelegramEnabled,
+  logTelegramNotificationSkipped,
+  logTelegramStartupStatus,
+  type TelegramMessageResult,
+  validateTelegramConfig,
+} from "./telegram-config";
 
 function getApiUrl(): string {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = getTelegramBotToken();
   if (!token) {
-    throw new Error("Falta TELEGRAM_BOT_TOKEN en .env");
+    throw new Error("TELEGRAM_BOT_TOKEN no configurado");
   }
   return `https://api.telegram.org/bot${token}`;
 }
@@ -11,9 +21,21 @@ function getApiUrl(): string {
 export async function sendTelegramMessage(
   chatId: number | string,
   message: string
-): Promise<void> {
+): Promise<TelegramMessageResult> {
+  if (!isTelegramEnabled()) {
+    logTelegramNotificationSkipped("disabled");
+    return { skipped: true, reason: "disabled" };
+  }
+
+  if (!canSendTelegramMessages()) {
+    console.error("[Telegram] telegram_notification_skipped", {
+      reason: "misconfigured",
+      detail: "Falta TELEGRAM_BOT_TOKEN con TELEGRAM_ENABLED=true",
+    });
+    return { skipped: true, reason: "misconfigured" };
+  }
+
   try {
-    // Intentar con Markdown primero
     await axios.post(
       `${getApiUrl()}/sendMessage`,
       {
@@ -24,8 +46,8 @@ export async function sendTelegramMessage(
       { timeout: 10000 }
     );
     console.log(`[Telegram] Mensaje enviado a ${chatId}`);
+    return { sent: true };
   } catch (error: unknown) {
-    // Si falla por Markdown, reintentar sin formato
     console.error(`[Telegram] Error con Markdown, reintentando sin formato...`);
     try {
       await axios.post(
@@ -37,6 +59,7 @@ export async function sendTelegramMessage(
         { timeout: 10000 }
       );
       console.log(`[Telegram] Mensaje enviado sin Markdown a ${chatId}`);
+      return { sent: true };
     } catch (retryError: unknown) {
       if (axios.isAxiosError(retryError)) {
         console.error(
@@ -46,11 +69,17 @@ export async function sendTelegramMessage(
       } else {
         console.error(`[Telegram] Error definitivo enviando a ${chatId}:`, retryError);
       }
+      throw retryError;
     }
   }
 }
 
 export async function setWebhook(url: string): Promise<void> {
+  if (!canRunTelegramInfra()) {
+    logTelegramStartupStatus();
+    return;
+  }
+
   try {
     const res = await axios.post(`${getApiUrl()}/setWebhook`, {
       url: `${url}/webhook`,
@@ -67,6 +96,10 @@ export async function setWebhook(url: string): Promise<void> {
 }
 
 export async function deleteWebhook(): Promise<void> {
+  if (!canRunTelegramInfra()) {
+    return;
+  }
+
   try {
     const res = await axios.post(`${getApiUrl()}/deleteWebhook`);
     console.log("[Telegram] Webhook eliminado:", res.data);
@@ -78,3 +111,12 @@ export async function deleteWebhook(): Promise<void> {
     }
   }
 }
+
+export {
+  isTelegramEnabled,
+  canRunTelegramInfra,
+  canSendTelegramMessages,
+  getTelegramBotToken,
+  validateTelegramConfig,
+  logTelegramStartupStatus,
+};

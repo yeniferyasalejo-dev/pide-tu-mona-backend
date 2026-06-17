@@ -6,7 +6,7 @@ import webhookRouter from "./routes/webhook";
 import adminRouter from "./routes/admin";
 import tpagaWebhookRouter from "./routes/tpaga-webhook";
 import whatsappWebhookRouter from "./routes/whatsapp-webhook";
-import { setWebhook } from "./services/telegram";
+import { canRunTelegramInfra, logTelegramStartupStatus, setWebhook } from "./services/telegram";
 import { startReconciliationWorker } from "./services/tpaga-reconciliation";
 
 const app = express();
@@ -27,6 +27,15 @@ app.get("/health", (_req, res) => {
 
 // Configurar webhook de Telegram (llamar una vez con la URL pública)
 app.get("/setup-webhook", async (req, res) => {
+  if (!canRunTelegramInfra()) {
+    logTelegramStartupStatus();
+    res.status(503).json({
+      error: "Telegram deshabilitado o mal configurado",
+      hint: "Define TELEGRAM_ENABLED=true con TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID",
+    });
+    return;
+  }
+
   const url = req.query.url as string;
   if (!url) {
     res.status(400).json({ error: "Falta el parámetro ?url=https://tu-dominio.com" });
@@ -38,6 +47,7 @@ app.get("/setup-webhook", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`[Server] Pide Tu Mona corriendo en puerto ${PORT}`);
+  logTelegramStartupStatus();
   startReconciliationWorker();
 });
 
