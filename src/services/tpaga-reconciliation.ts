@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { getPrismaMissingTableName, isPrismaMissingTableError } from "../lib/prisma-errors";
 import { getChargeStatus } from "./tpaga";
 import { processPaymentFromStatus } from "./payment-processor";
 import { logTpagaWebhookInfo, logTpagaWebhookError } from "./tpaga-webhook-logger";
@@ -12,6 +13,38 @@ const LOCK_STALE_MS = 5 * 60 * 1000;
 const WORKER_TICK_MS = 60_000;
 
 let workerTimer: NodeJS.Timeout | null = null;
+let workerDisabledForSchema = false;
+
+function handleReconciliationWorkerError(error: unknown): void {
+  if (isPrismaMissingTableError(error)) {
+    const table = getPrismaMissingTableName(error) ?? "desconocida";
+    if (!workerDisabledForSchema) {
+      workerDisabledForSchema = true;
+      console.error(
+        `[Tpaga Webhook] reconciliation_worker_disabled table=${table} ` +
+          "Ejecuta: npx prisma migrate deploy"
+      );
+      stopReconciliationWorker();
+    }
+    return;
+  }
+
+  logTpagaWebhookError(
+    "reconciliation_worker_tick_failed",
+    { source: "reconciliation" },
+    error
+  );
+}
+
+async function runReconciliationWorkerTick(): Promise<void> {
+  if (workerDisabledForSchema) return;
+
+  try {
+    await processDueReconciliations();
+  } catch (error) {
+    handleReconciliationWorkerError(error);
+  }
+}
 
 /**
  * Encola o reactiva reconciliación persistente en BD.
@@ -325,16 +358,10 @@ export function startReconciliationWorker(): void {
     source: "reconciliation",
   });
 
-  void processDueReconciliations();
+  void runReconciliationWorkerTick();
 
   workerTimer = setInterval(() => {
-    void processDueReconciliations().catch((error) => {
-      logTpagaWebhookError(
-        "reconciliation_worker_tick_failed",
-        { source: "reconciliation" },
-        error
-      );
-    });
+    void runReconciliationWorkerTick();
   }, WORKER_TICK_MS);
 
   workerTimer.unref?.();
